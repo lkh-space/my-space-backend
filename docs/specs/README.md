@@ -45,4 +45,4 @@
 
 | 스펙 문서 | 설계 요약 | 상태 |
 | :--- | :--- | :--- |
-| *신규 스펙 작성 시 여기에 등록합니다* | - | - |
+| [error-handling](./error-handling.md) | 전역 에러 처리 및 커스텀 예외 체계 사양서 (BaseDomainException, ApiException, AllExceptionsFilter) | draft |
