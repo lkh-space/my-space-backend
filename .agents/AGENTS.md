@@ -159,7 +159,26 @@ Authelia는 자체 인프라의 리버스 프록시(Traefik, Nginx 등)와 연�
 
 ---
 
-## 6. AI 에이전트(Antigravity) 작업 및 코딩 원칙
+## 6. 에러 처리 및 도메인 에러 코드 매핑 프로토콜 (Error Handling Protocol)
+
+본 프로젝트는 비즈니스 도메인과 전송 프로토콜(HTTP, gRPC, GraphQL 등)의 완전한 결합 분리를 지향합니다. AI 에이전트는 새로운 기능을 개발하거나 예외를 추가할 때 다음 프로토콜을 **반드시 준수**해야 합니다:
+
+### 6.1. 도메인 예외 정의 원칙
+1. **`BaseDomainException` 상속**: 모든 비즈니스/도메인 예외는 `src/common/exceptions/domain.exception.ts`의 `BaseDomainException`을 상속받아야 합니다.
+2. **프레임워크 무의존**: 도메인 예외 클래스는 `@nestjs/common`이나 HTTP 상태 코드(400, 404 등)를 일절 임포트하거나 의존해서는 안 됩니다.
+3. **고유 비즈니스 에러 코드 선언**: 디버깅과 클라이언트 식별을 위해 고유한 `code: string`을 필수로 선언합니다 (예: `PDF_PASSWORD_PROTECTED`, `DBML_SYNTAX_ERROR`). 에러 코드 문자열에 특정 접미사 규칙은 필요 없습니다.
+
+### 6.2. 전송 계층 매핑 테이블 동기화 의무 (`DOMAIN_ERROR_HTTP_MAP`)
+- **매핑 등록 의무**:
+  - 도메인 예외가 REST API 요청 시 특정 HTTP 상태 코드(404, 409, 401, 403, 500, 400 등)로 변환되어야 하는 경우, **반드시 [`src/common/filters/domain-error-http.map.ts`](file:///Users/limkeunhyeok/workspace/my-space-backend/src/common/filters/domain-error-http.map.ts)의 `DOMAIN_ERROR_HTTP_MAP` 객체에 해당 에러 코드를 등록**해야 합니다.
+- **기본 폴백 (422 Unprocessable Entity)**:
+  - 매핑 테이블에 등록되지 않은 임의의 도메인 에러 코드는 일반 비즈니스 규칙 위반으로 간주되어 자동으로 `422 Unprocessable Entity` 상태 코드로 응답됩니다.
+- **다중 프로토콜 확장 원칙**:
+  - 향후 gRPC나 GraphQL을 도입할 때도 도메인 코드는 일절 수정하지 않으며, 전송 계층 전용 매핑 어댑터(`domain-error-grpc.map.ts` 등)만 추가합니다.
+
+---
+
+## 7. AI 에이전트(Antigravity) 작업 및 코딩 원칙
 
 AI 에이전트는 본 프로젝트의 코드를 작성하거나 리팩토링할 때 다음 규칙을 **반드시 준수**해야 합니다:
 
@@ -178,3 +197,5 @@ AI 에이전트는 본 프로젝트의 코드를 작성하거나 리팩토링할
    - 프로젝트 내부의 로컬 파일/모듈을 임포트할 때는 **반드시 `.js` 확장자를 명시**해야 합니다. (예: `import { ... } from './common/logger/logger.config.js'`)
 6. **TypeScript 버전 제약**:
    - Nest CLI의 내부 컴파일러 API 호환성을 위해 TypeScript는 **6.x 버전**을 유지합니다. (7.x로 임의 업그레이드 금지)
+7. **도메인 에러 코드 매핑 의무 (Error Mapping Obligation)**:
+   - 새로운 비즈니스 기능 및 도메인 예외를 작성할 때, 의도한 HTTP 상태 코드가 반환되도록 `src/common/filters/domain-error-http.map.ts`의 `DOMAIN_ERROR_HTTP_MAP` 등록 여부를 반드시 점검하고 동기화합니다.

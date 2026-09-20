@@ -1,5 +1,5 @@
 ---
-status: draft
+status: implemented
 owner: Keunhyeok Lim
 last-updated: 2026-09-20
 ---
@@ -32,35 +32,24 @@ NestJS 프레임워크 내장 `HttpException`에 대한 의존성을 제거하�
 
 ## 4. 비즈니스 규칙 (Business Rules)
 
-* **`BR-E01` (프레임워크 예외 분리)**: 도메인 서비스 및 순수 비즈니스 로직 클래스에서는 NestJS의 `HttpException` 계열(`BadRequestException` 등)을 직접 임포트하거나 던져서는 안 된다.
-* **`BR-E02` (도메인 예외 코드 매핑)**: `BaseDomainException`의 `code`는 다음 표준 HTTP Status로 자동 변환된다:
-  - `NOT_FOUND` ➔ `404 Not Found`
-  - `BAD_REQUEST` ➔ `400 Bad Request`
-  - `UNAUTHORIZED` ➔ `401 Unauthorized`
-  - `FORBIDDEN` ➔ `403 Forbidden`
-  - `CONFLICT` ➔ `409 Conflict`
-  - `INTERNAL` ➔ `500 Internal Server Error`
-* **`BR-E03` (보안 마스킹)**: 외부 서버(`IS_LOCAL=false`) 환경에서는 응답 본문에서 `stack` 정보를 원천 제외해야 한다. 로컬 개발 환경(`IS_LOCAL=true`)에서만 디버깅용 `stack`을 포함한다.
-* **`BR-E04` (로깅 차등화)**: 4xx 클라이언트 예외는 `logger.warn`, 5xx 서버 예외 및 미처리 런타임 오류는 `logger.error`로 로깅한다.
+* **`BR-E01` (완전한 프레임워크 및 전송 계층 독립성)**: 도메인 예외는 HTTP 상태 코드(400, 404 등)나 NestJS 프레임워크 패키지에 일절 의존하지 않아야 하며, 순수 비즈니스 실패 사유를 나타내는 고유 에러 코드(`code: string`)만을 선언한다.
+* **`BR-E02` (도메인 에러 코드 클라이언트 직접 노출)**: 에러 응답의 `code` 필드에는 HTTP 상태 코드 이름이 아닌, 도메인이 정의한 고유 비즈니스 에러 코드(예: `PDF_PASSWORD_PROTECTED`, `DBML_SYNTAX_ERROR`)가 그대로 반환되어야 한다.
+* **`BR-E03` (전송 계층별 상태 매핑 분리 및 기본값)**: 도메인 에러 코드는 전송 계층(REST, gRPC, GraphQL)에 의존하지 않으며, 각 전송 계층의 어댑터/필터가 명시적 매핑 테이블을 통해 상태를 변환한다.
+  - REST 계층에서는 `DOMAIN_ERROR_HTTP_MAP` 테이블에 등록된 에러 코드에 대응하는 HTTP 상태 코드로 변환한다.
+  - 매핑 테이블에 등록되지 않은 임의의 비즈니스 에러 코드는 기본값인 `422 Unprocessable Entity`로 처리한다.
+  - 향후 gRPC, GraphQL 등 다른 프로토콜 도입 시 도메인 계층 수정 없이 전송 계층 전용 매핑 어댑터만 확장한다.
+* **`BR-E04` (보안 마스킹)**: 외부 서버(`IS_LOCAL=false`) 환경에서는 응답 본문에서 `stack` 정보를 원천 제외해야 한다. 로컬 개발 환경(`IS_LOCAL=true`)에서만 디버깅용 `stack`을 포함한다.
+* **`BR-E05` (에러 로깅 일원화 및 상태 필터링)**: 예외 필터로 인입된 모든 예외(4xx, 5xx)는 예외 없이 `logger.error`로 기록한다. 단, 로그 페이로드에 `status`와 `statusCode` 필드를 명시하여 Loki/Grafana 모니터링 환경에서 500 이상 서버 장애를 즉시 선별 쿼리할 수 있도록 한다.
 
 ## 5. 인터페이스 및 클래스 설계 (Interface & Class Design)
 
 ### 5.1. 예외 클래스 계층
 
 ```typescript
-// 1. 도메인 예외 코드
-export enum DomainErrorCode {
-  NOT_FOUND = 'NOT_FOUND',
-  BAD_REQUEST = 'BAD_REQUEST',
-  UNAUTHORIZED = 'UNAUTHORIZED',
-  FORBIDDEN = 'FORBIDDEN',
-  CONFLICT = 'CONFLICT',
-  INTERNAL = 'INTERNAL',
-}
-
-// 2. 최상위 도메인 예외 추상 클래스
+// 1. 최상위 도메인 예외 추상 클래스 (프레임워크 무의존 순수 TS)
 export abstract class BaseDomainException extends Error {
-  abstract readonly code: DomainErrorCode;
+  // 비즈니스 고유 에러 코드 (예: 'PDF_PASSWORD_PROTECTED', 'DBML_SYNTAX_ERROR')
+  abstract readonly code: string;
 
   constructor(
     message: string,
@@ -73,11 +62,12 @@ export abstract class BaseDomainException extends Error {
   }
 }
 
-// 3. HTTP 명시적 예외 클래스
+// 2. HTTP 명시적 예외 클래스 (웹 계층 전용)
 export class ApiException extends Error {
   constructor(
     public readonly statusCode: HttpStatus,
     message: string,
+    public readonly code: string = 'API_ERROR',
     public readonly details?: Record<string, unknown>,
   ) {
     super(message);
@@ -102,7 +92,24 @@ export interface ErrorResponseDto {
 }
 ```
 
-## 6. 오픈 질문 (Open Questions)
+### 5.3. REST 전송 매핑 테이블 (`domain-error-http.map.ts`)
 
-* [ ] 에러 응답의 `code` 필드 값으로 구체적인 예외 클래스명(예: `UserNotFoundException`)을 사용할지, 아니면 도메인 에러 코드(예: `USER_NOT_FOUND`)를 사용할지?
-* [ ] 4xx 클라이언트 오류 발생 시 Pino 로거의 레벨을 `warn`으로 남길 것인가, `info` 또는 `debug`로 남길 것인가?
+```typescript
+export const DOMAIN_ERROR_HTTP_MAP: Record<string, HttpStatus> = {
+  AUTH_UNAUTHORIZED: HttpStatus.UNAUTHORIZED,
+  TOKEN_EXPIRED: HttpStatus.UNAUTHORIZED,
+  ACCESS_DENIED: HttpStatus.FORBIDDEN,
+  USER_NOT_FOUND: HttpStatus.NOT_FOUND,
+  RESOURCE_NOT_FOUND: HttpStatus.NOT_FOUND,
+  EMAIL_ALREADY_EXISTS: HttpStatus.CONFLICT,
+  INVALID_INPUT: HttpStatus.BAD_REQUEST,
+  DATABASE_CONNECTION_ERROR: HttpStatus.INTERNAL_SERVER_ERROR,
+};
+
+export const DEFAULT_DOMAIN_HTTP_STATUS = HttpStatus.UNPROCESSABLE_ENTITY;
+```
+
+## 6. 결정된 사항 및 오픈 질문 (Decisions & Open Questions)
+
+* [x] **에러 응답의 `code` 필드 규격**: HTTP 상태 명칭이 아닌, 비즈니스 실패 원인을 직접 식별할 수 있는 고유 도메인 에러 코드(`code: string`, 예: `USER_NOT_FOUND`, `PDF_PASSWORD_PROTECTED`)를 그대로 반환하여 디버깅 및 Loki 로그 필터링 용이성을 확보한다.
+* [x] **로깅 레벨 일원화 및 상태 필터링**: 모든 예외(4xx, 5xx)는 `logger.error`로 통일하여 기록하되, 로그 객체에 `status`/`statusCode`를 명시하여 500 이상 서버 에러를 정밀 쿼리할 수 있도록 한다.

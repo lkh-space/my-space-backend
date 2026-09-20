@@ -57,10 +57,14 @@ export interface ExampleResponseDto {
 
 ## 6. 예외 처리 및 에러 스펙 (Error Handling)
 
-| 에러 상황 | HTTP Status | 에러 코드 | 설명 |
-| :--- | :--- | :--- | :--- |
-| {리소스 미존재} | 404 Not Found | `RESOURCE_NOT_FOUND` | {해당 ID의 데이터가 없음} |
-| {입력값 검증 실패} | 400 Bad Request | `INVALID_INPUT` | {필수 필드 누락} |
+> [!IMPORTANT]
+> 새로 정의한 도메인 에러 코드가 특정 HTTP 상태 코드(404, 409, 401, 403, 500 등)로 매핑되어야 하는 경우, 구현 시 반드시 [`src/common/filters/domain-error-http.map.ts`](../../src/common/filters/domain-error-http.map.ts)의 `DOMAIN_ERROR_HTTP_MAP`에 등록해야 합니다. (미등록 시 `422 Unprocessable Entity`로 기본 처리)
+
+| 에러 상황 | 발생 예외 클래스 | 에러 코드 (`code`) | HTTP Status | DOMAIN_ERROR_HTTP_MAP 등록 필요 여부 |
+| :--- | :--- | :--- | :--- | :--- |
+| {리소스 미존재} | `ResourceNotFoundException` | `RESOURCE_NOT_FOUND` | 404 Not Found | 필수 등록 |
+| {접근 권한 없음} | `ForbiddenException` | `ACCESS_DENIED` | 403 Forbidden | 필수 등록 |
+| {비즈니스 제약 위반} | `InvalidStateTransitionException` | `INVALID_STATE` | 422 Unprocessable Entity | 불필요 (기본값) |
 
 ## 7. 오픈 질문 (Open Questions)
 
