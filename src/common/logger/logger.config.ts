@@ -4,11 +4,22 @@ import type { Params } from 'nestjs-pino';
 import pino from 'pino';
 
 /**
- * 로컬 환경 여부 확인:
- * IS_LOCAL 환경변수가 명시적으로 'true'일 때만 로컬 프리티 모드로 동작하고,
- * 그 외(미지정, 서버 재시작, 배포 환경 등)에는 무조건 안전하게 순수 단일 라인 JSON 모드로 동작합니다.
+ * 로거 설정 옵션 인터페이스
  */
-export function checkIsLocal(): boolean {
+export interface LoggerConfigOptions {
+  isLocal?: boolean;
+  logLevel?: string;
+}
+
+/**
+ * 로컬 환경 여부 확인:
+ * 명시적 isLocal 값이 전달된 경우 우선 적용하며,
+ * 미전달 시 IS_LOCAL 환경변수를 기준으로 판단합니다.
+ */
+export function checkIsLocal(isLocalExplicit?: boolean): boolean {
+  if (typeof isLocalExplicit === 'boolean') {
+    return isLocalExplicit;
+  }
   return process.env.IS_LOCAL === 'true';
 }
 
@@ -35,9 +46,9 @@ function getPrettyTransport(isLocal: boolean) {
 /**
  * Pino 로거 설정 생성 함수
  */
-export function createLoggerConfig(): Params {
-  const isLocal = checkIsLocal();
-  const logLevel = process.env.LOG_LEVEL || (isLocal ? 'debug' : 'info');
+export function createLoggerConfig(options?: LoggerConfigOptions): Params {
+  const isLocal = checkIsLocal(options?.isLocal);
+  const logLevel = options?.logLevel || process.env.LOG_LEVEL || (isLocal ? 'debug' : 'info');
 
   return {
     pinoHttp: {

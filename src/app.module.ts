@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
 import { LoggerModule } from 'nestjs-pino';
+import { appConfig, validateEnv } from './config/index.js';
 import { createLoggerConfig } from './common/logger/logger.config.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { AppController } from './app.controller.js';
@@ -11,7 +13,20 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
   imports: [
-    LoggerModule.forRoot(createLoggerConfig()),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [appConfig],
+      validate: validateEnv,
+    }),
+    LoggerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const isLocal = configService.get<boolean>('app.isLocal', false);
+        const logLevel = configService.get<string>('app.logLevel', isLocal ? 'debug' : 'info');
+        return createLoggerConfig({ isLocal, logLevel });
+      },
+    }),
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
     ObserveModule.forRoot({

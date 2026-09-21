@@ -83,25 +83,52 @@ describe('AllExceptionsFilter', () => {
 
   describe('resolveDomainHttpStatus (명시적 전송 매핑 테이블)', () => {
     it('등록된 도메인 에러 코드에 대해 정확한 HTTP 상태 코드를 매핑해야 한다', () => {
-      expect(resolveDomainHttpStatus('USER_NOT_FOUND')).toBe(HttpStatus.NOT_FOUND);
-      expect(resolveDomainHttpStatus('EMAIL_ALREADY_EXISTS')).toBe(HttpStatus.CONFLICT);
-      expect(resolveDomainHttpStatus('ACCESS_DENIED')).toBe(HttpStatus.FORBIDDEN);
-      expect(resolveDomainHttpStatus('TOKEN_EXPIRED')).toBe(HttpStatus.UNAUTHORIZED);
-      expect(resolveDomainHttpStatus('DATABASE_CONNECTION_ERROR')).toBe(
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-      expect(resolveDomainHttpStatus('INVALID_INPUT')).toBe(HttpStatus.BAD_REQUEST);
+      // given
+      const notFoundCode = 'USER_NOT_FOUND';
+      const conflictCode = 'EMAIL_ALREADY_EXISTS';
+      const forbiddenCode = 'ACCESS_DENIED';
+      const unauthorizedCode = 'TOKEN_EXPIRED';
+      const internalCode = 'DATABASE_CONNECTION_ERROR';
+      const badRequestCode = 'INVALID_INPUT';
+
+      // when
+      const notFoundStatus = resolveDomainHttpStatus(notFoundCode);
+      const conflictStatus = resolveDomainHttpStatus(conflictCode);
+      const forbiddenStatus = resolveDomainHttpStatus(forbiddenCode);
+      const unauthorizedStatus = resolveDomainHttpStatus(unauthorizedCode);
+      const internalStatus = resolveDomainHttpStatus(internalCode);
+      const badRequestStatus = resolveDomainHttpStatus(badRequestCode);
+
+      // then
+      expect(notFoundStatus).toBe(HttpStatus.NOT_FOUND);
+      expect(conflictStatus).toBe(HttpStatus.CONFLICT);
+      expect(forbiddenStatus).toBe(HttpStatus.FORBIDDEN);
+      expect(unauthorizedStatus).toBe(HttpStatus.UNAUTHORIZED);
+      expect(internalStatus).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(badRequestStatus).toBe(HttpStatus.BAD_REQUEST);
     });
 
     it('매핑 테이블에 등록되지 않은 임의의 도메인 코드는 기본값(422)을 반환해야 한다', () => {
-      expect(resolveDomainHttpStatus('INSUFFICIENT_BALANCE')).toBe(DEFAULT_DOMAIN_HTTP_STATUS);
-      expect(resolveDomainHttpStatus('PDF_PASSWORD_PROTECTED')).toBe(DEFAULT_DOMAIN_HTTP_STATUS);
-      expect(resolveDomainHttpStatus('CUSTOM_BIZ_RULE_ERROR')).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+      // given
+      const unmappedCode1 = 'INSUFFICIENT_BALANCE';
+      const unmappedCode2 = 'PDF_PASSWORD_PROTECTED';
+      const unmappedCode3 = 'CUSTOM_BIZ_RULE_ERROR';
+
+      // when
+      const status1 = resolveDomainHttpStatus(unmappedCode1);
+      const status2 = resolveDomainHttpStatus(unmappedCode2);
+      const status3 = resolveDomainHttpStatus(unmappedCode3);
+
+      // then
+      expect(status1).toBe(DEFAULT_DOMAIN_HTTP_STATUS);
+      expect(status2).toBe(DEFAULT_DOMAIN_HTTP_STATUS);
+      expect(status3).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     });
   });
 
   describe('ApiException 처리', () => {
     it('지정된 HTTP 상태 코드, 명시적 에러 코드 및 상세 정보를 JSON 응답으로 반환해야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new ApiException(
         HttpStatus.BAD_REQUEST,
@@ -110,8 +137,10 @@ describe('AllExceptionsFilter', () => {
         { field: 'title' },
       );
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -132,14 +161,17 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('code 인자를 생략하면 기본값 API_ERROR가 반환되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new ApiException(
         HttpStatus.BAD_REQUEST,
         '잘못된 요청입니다.',
       );
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'API_ERROR',
@@ -150,13 +182,16 @@ describe('AllExceptionsFilter', () => {
 
   describe('BaseDomainException 처리 (도메인 에러 코드 클라이언트 반환)', () => {
     it('USER_NOT_FOUND 도메인 코드는 404 및 고유 에러 코드로 반환되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new UserNotFoundException('사용자를 찾을 수 없습니다.', {
         userId: '12345',
       });
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -177,11 +212,14 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('EMAIL_ALREADY_EXISTS 도메인 코드는 409 및 고유 에러 코드로 반환되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new DuplicateEmailException('이미 등록된 이메일입니다.');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -200,11 +238,14 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('DATABASE_CONNECTION_ERROR 도메인 코드는 500 및 error 레벨로 로깅되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new SystemFailureException('스토리지 연동 오류');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
@@ -225,11 +266,14 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('매핑되지 않은 일반 비즈니스 제약 위반 코드는 422(Unprocessable Entity)로 매핑되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new InsufficientBalanceException('포인트가 부족합니다.');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
@@ -250,11 +294,14 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('ACCESS_DENIED 도메인 코드는 403 Forbidden으로 매핑되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new AccessDeniedException('접근 권한이 없습니다.');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.FORBIDDEN);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -265,11 +312,14 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('TOKEN_EXPIRED 도메인 코드는 401 Unauthorized로 매핑되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new TokenExpiredException('인증 토큰이 만료되었습니다.');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.UNAUTHORIZED);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -282,11 +332,14 @@ describe('AllExceptionsFilter', () => {
 
   describe('표준 HttpException 처리', () => {
     it('NestJS 내장 HttpException 발생 시 올바른 상태 코드와 메시지를 반환해야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new HttpException('권한이 없습니다.', HttpStatus.FORBIDDEN);
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.FORBIDDEN);
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -300,11 +353,14 @@ describe('AllExceptionsFilter', () => {
 
   describe('미처리 Unhandled Error 처리', () => {
     it('일반 Error 발생 시 500 에러 및 error 레벨 로깅이 수행되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new Error('예상치 못한 데이터베이스 연결 끊김');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.status).toHaveBeenCalledWith(
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
@@ -321,11 +377,14 @@ describe('AllExceptionsFilter', () => {
 
   describe('환경별 스택 트레이스 노출 제어 (IS_LOCAL)', () => {
     it('IS_LOCAL=true 일 때는 클라이언트 응답에 stack이 포함되어야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'true';
       const exception = new Error('로컬 디버그 에러');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
           stack: expect.any(String),
@@ -334,11 +393,14 @@ describe('AllExceptionsFilter', () => {
     });
 
     it('IS_LOCAL=false 일 때는 클라이언트 응답에 stack이 포함되지 않아야 한다', () => {
+      // given
       process.env.IS_LOCAL = 'false';
       const exception = new Error('운영 환경 에러');
 
+      // when
       filter.catch(exception, mockArgumentsHost);
 
+      // then
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.not.objectContaining({
           stack: expect.anything(),

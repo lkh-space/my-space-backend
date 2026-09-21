@@ -46,3 +46,4 @@
 | 스펙 문서 | 설계 요약 | 상태 |
 | :--- | :--- | :--- |
 | [error-handling](./error-handling.md) | 전역 에러 처리 및 커스텀 예외 체계 사양서 (BaseDomainException, ApiException, AllExceptionsFilter) | implemented |
+| [config](./config.md) | 환경 설정 및 ConfigService 사양서 (Zod 스키마 검증, registerAs 네임스페이스) | implemented |

@@ -199,3 +199,5 @@ AI 에이전트는 본 프로젝트의 코드를 작성하거나 리팩토링할
    - Nest CLI의 내부 컴파일러 API 호환성을 위해 TypeScript는 **6.x 버전**을 유지합니다. (7.x로 임의 업그레이드 금지)
 7. **도메인 에러 코드 매핑 의무 (Error Mapping Obligation)**:
    - 새로운 비즈니스 기능 및 도메인 예외를 작성할 때, 의도한 HTTP 상태 코드가 반환되도록 `src/common/filters/domain-error-http.map.ts`의 `DOMAIN_ERROR_HTTP_MAP` 등록 여부를 반드시 점검하고 동기화합니다.
+8. **BDD 테스트 작성 원칙 (Given-When-Then)**:
+   - 모든 단위 테스트 및 통합 테스트(Vitest)는 BDD 스타일을 준수하며, 테스트 본문을 `// given`, `// when`, `// then` 주석으로 명확히 구분하여 작성합니다.
