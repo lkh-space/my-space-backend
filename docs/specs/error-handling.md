@@ -1,7 +1,7 @@
 ---
 status: implemented
 owner: Keunhyeok Lim
-last-updated: 2026-09-20
+last-updated: 2026-09-21
 ---
 
 # 전역 에러 처리 및 커스텀 예외 체계 사양서 (Error Handling Specification)
@@ -94,22 +94,14 @@ export interface ErrorResponseDto {
 
 ### 5.3. REST 전송 매핑 테이블 (`domain-error-http.map.ts`)
 
-```typescript
-export const DOMAIN_ERROR_HTTP_MAP: Record<string, HttpStatus> = {
-  AUTH_UNAUTHORIZED: HttpStatus.UNAUTHORIZED,
-  TOKEN_EXPIRED: HttpStatus.UNAUTHORIZED,
-  ACCESS_DENIED: HttpStatus.FORBIDDEN,
-  USER_NOT_FOUND: HttpStatus.NOT_FOUND,
-  RESOURCE_NOT_FOUND: HttpStatus.NOT_FOUND,
-  EMAIL_ALREADY_EXISTS: HttpStatus.CONFLICT,
-  INVALID_INPUT: HttpStatus.BAD_REQUEST,
-  DATABASE_CONNECTION_ERROR: HttpStatus.INTERNAL_SERVER_ERROR,
-};
+도메인 에러 코드와 REST HTTP 상태 코드 간의 최신 매핑 현황 및 기본 폴백 정책은 아래의 소스 파일에서 단일 진실 공급원(Single Source of Truth)으로 관리하며 직접 확인합니다:
 
-export const DEFAULT_DOMAIN_HTTP_STATUS = HttpStatus.UNPROCESSABLE_ENTITY;
-```
+* **매핑 정의 파일**: [`src/common/filters/domain-error-http.map.ts`](../../src/common/filters/domain-error-http.map.ts)
+
+> [!NOTE]
+> 도메인 에러 코드가 추가되거나 변경될 때마다 본 사양서의 중복 갱신을 방지하고 코드베이스와의 동기화 비용을 줄이기 위해, 상세 매핑 현황은 위의 소스 파일(`DOMAIN_ERROR_HTTP_MAP`)을 직접 확인합니다. 매핑 테이블에 등록되지 않은 임의의 도메인 에러는 자동으로 `DEFAULT_DOMAIN_HTTP_STATUS`(`422 Unprocessable Entity`)로 폴백 처리됩니다.
 
 ## 6. 결정된 사항 및 오픈 질문 (Decisions & Open Questions)
 
-* [x] **에러 응답의 `code` 필드 규격**: HTTP 상태 명칭이 아닌, 비즈니스 실패 원인을 직접 식별할 수 있는 고유 도메인 에러 코드(`code: string`, 예: `USER_NOT_FOUND`, `PDF_PASSWORD_PROTECTED`)를 그대로 반환하여 디버깅 및 Loki 로그 필터링 용이성을 확보한다.
+* [x] **에러 응답의 `code` 필드 규격**: HTTP 상태 명칭이 아닌, 비즈니스 실패 원인을 직접 식별할 수 있는 고유 도메인 에러 코드(`code: string`, 예: `RESOURCE_NOT_FOUND`, `PDF_PASSWORD_REQUIRED`)를 그대로 반환하여 디버깅 및 Loki 로그 필터링 용이성을 확보한다.
 * [x] **로깅 레벨 일원화 및 상태 필터링**: 모든 예외(4xx, 5xx)는 `logger.error`로 통일하여 기록하되, 로그 객체에 `status`/`statusCode`를 명시하여 500 이상 서버 에러를 정밀 쿼리할 수 있도록 한다.

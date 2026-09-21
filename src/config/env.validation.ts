@@ -28,7 +28,9 @@ export function validateEnv(config: Record<string, unknown>): EnvConfig {
     const errorMessages = result.error.issues
       .map((issue) => `[${issue.path.join('.')}] ${issue.message}`)
       .join('; ');
-    throw new Error(`환경변수 검증 실패 (Invalid Environment Variables): ${errorMessages}`);
+    throw new Error(
+      `환경변수 검증 실패 (Invalid Environment Variables): ${errorMessages}`,
+    );
   }
 
   return result.data;

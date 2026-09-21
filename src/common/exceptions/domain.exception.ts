@@ -6,7 +6,7 @@
 export abstract class BaseDomainException extends Error {
   /**
    * HTTP 상태와 독립적인 고유 비즈니스 에러 코드
-   * 예: 'USER_NOT_FOUND', 'PDF_PASSWORD_PROTECTED', 'EMAIL_ALREADY_EXISTS'
+   * 예: 'RESOURCE_NOT_FOUND', 'PDF_PASSWORD_REQUIRED', 'RESOURCE_ALREADY_EXISTS'
    */
   abstract readonly code: string;
 

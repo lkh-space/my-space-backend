@@ -48,7 +48,8 @@ function getPrettyTransport(isLocal: boolean) {
  */
 export function createLoggerConfig(options?: LoggerConfigOptions): Params {
   const isLocal = checkIsLocal(options?.isLocal);
-  const logLevel = options?.logLevel || process.env.LOG_LEVEL || (isLocal ? 'debug' : 'info');
+  const logLevel =
+    options?.logLevel || process.env.LOG_LEVEL || (isLocal ? 'debug' : 'info');
 
   return {
     pinoHttp: {
@@ -63,8 +64,9 @@ export function createLoggerConfig(options?: LoggerConfigOptions): Params {
       genReqId: (req: IncomingMessage, res: ServerResponse) => {
         const existingHeader = req.headers['x-request-id'];
         const id =
-          (Array.isArray(existingHeader) ? existingHeader[0] : existingHeader) ||
-          randomUUID();
+          (Array.isArray(existingHeader)
+            ? existingHeader[0]
+            : existingHeader) || randomUUID();
         res.setHeader('x-request-id', id);
         return id;
       },
@@ -106,12 +108,20 @@ export function createLoggerConfig(options?: LoggerConfigOptions): Params {
       },
 
       // 자동 HTTP 요청 완료 로그 메시지
-      customSuccessMessage: (req: IncomingMessage, res: ServerResponse, responseTime: number) => {
+      customSuccessMessage: (
+        req: IncomingMessage,
+        res: ServerResponse,
+        responseTime: number,
+      ) => {
         return `${req.method} ${req.url} ${res.statusCode} - ${responseTime}ms`;
       },
 
       // 자동 HTTP 요청 에러 로그 메시지
-      customErrorMessage: (req: IncomingMessage, res: ServerResponse, error: Error) => {
+      customErrorMessage: (
+        req: IncomingMessage,
+        res: ServerResponse,
+        error: Error,
+      ) => {
         return `${req.method} ${req.url} ${res.statusCode} - Error: ${error.message}`;
       },
     },

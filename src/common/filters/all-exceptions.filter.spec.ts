@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import { PinoLogger } from 'nestjs-pino';
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
 import {
@@ -11,12 +11,12 @@ import { BaseDomainException } from '../exceptions/domain.exception.js';
 import { ApiException } from '../exceptions/api.exception.js';
 
 // 테스트용 도메인 예외 구현체
-class UserNotFoundException extends BaseDomainException {
-  readonly code = 'USER_NOT_FOUND';
+class ResourceNotFoundException extends BaseDomainException {
+  readonly code = 'RESOURCE_NOT_FOUND';
 }
 
-class DuplicateEmailException extends BaseDomainException {
-  readonly code = 'EMAIL_ALREADY_EXISTS';
+class ResourceAlreadyExistsException extends BaseDomainException {
+  readonly code = 'RESOURCE_ALREADY_EXISTS';
 }
 
 class SystemFailureException extends BaseDomainException {
@@ -84,8 +84,8 @@ describe('AllExceptionsFilter', () => {
   describe('resolveDomainHttpStatus (명시적 전송 매핑 테이블)', () => {
     it('등록된 도메인 에러 코드에 대해 정확한 HTTP 상태 코드를 매핑해야 한다', () => {
       // given
-      const notFoundCode = 'USER_NOT_FOUND';
-      const conflictCode = 'EMAIL_ALREADY_EXISTS';
+      const notFoundCode = 'RESOURCE_NOT_FOUND';
+      const conflictCode = 'RESOURCE_ALREADY_EXISTS';
       const forbiddenCode = 'ACCESS_DENIED';
       const unauthorizedCode = 'TOKEN_EXPIRED';
       const internalCode = 'DATABASE_CONNECTION_ERROR';
@@ -181,12 +181,15 @@ describe('AllExceptionsFilter', () => {
   });
 
   describe('BaseDomainException 처리 (도메인 에러 코드 클라이언트 반환)', () => {
-    it('USER_NOT_FOUND 도메인 코드는 404 및 고유 에러 코드로 반환되어야 한다', () => {
+    it('RESOURCE_NOT_FOUND 도메인 코드는 404 및 고유 에러 코드로 반환되어야 한다', () => {
       // given
       process.env.IS_LOCAL = 'false';
-      const exception = new UserNotFoundException('사용자를 찾을 수 없습니다.', {
-        userId: '12345',
-      });
+      const exception = new ResourceNotFoundException(
+        '요청한 리소스를 찾을 수 없습니다.',
+        {
+          resourceId: '12345',
+        },
+      );
 
       // when
       filter.catch(exception, mockArgumentsHost);
@@ -196,10 +199,10 @@ describe('AllExceptionsFilter', () => {
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: HttpStatus.NOT_FOUND,
-          code: 'USER_NOT_FOUND',
-          message: '사용자를 찾을 수 없습니다.',
+          code: 'RESOURCE_NOT_FOUND',
+          message: '요청한 리소스를 찾을 수 없습니다.',
           path: '/api/v1/test',
-          details: { userId: '12345' },
+          details: { resourceId: '12345' },
         }),
       );
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -211,10 +214,12 @@ describe('AllExceptionsFilter', () => {
       );
     });
 
-    it('EMAIL_ALREADY_EXISTS 도메인 코드는 409 및 고유 에러 코드로 반환되어야 한다', () => {
+    it('RESOURCE_ALREADY_EXISTS 도메인 코드는 409 및 고유 에러 코드로 반환되어야 한다', () => {
       // given
       process.env.IS_LOCAL = 'false';
-      const exception = new DuplicateEmailException('이미 등록된 이메일입니다.');
+      const exception = new ResourceAlreadyExistsException(
+        '이미 존재하는 리소스입니다.',
+      );
 
       // when
       filter.catch(exception, mockArgumentsHost);
@@ -224,8 +229,8 @@ describe('AllExceptionsFilter', () => {
       expect(mockResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: HttpStatus.CONFLICT,
-          code: 'EMAIL_ALREADY_EXISTS',
-          message: '이미 등록된 이메일입니다.',
+          code: 'RESOURCE_ALREADY_EXISTS',
+          message: '이미 존재하는 리소스입니다.',
         }),
       );
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -268,7 +273,9 @@ describe('AllExceptionsFilter', () => {
     it('매핑되지 않은 일반 비즈니스 제약 위반 코드는 422(Unprocessable Entity)로 매핑되어야 한다', () => {
       // given
       process.env.IS_LOCAL = 'false';
-      const exception = new InsufficientBalanceException('포인트가 부족합니다.');
+      const exception = new InsufficientBalanceException(
+        '포인트가 부족합니다.',
+      );
 
       // when
       filter.catch(exception, mockArgumentsHost);
@@ -314,7 +321,9 @@ describe('AllExceptionsFilter', () => {
     it('TOKEN_EXPIRED 도메인 코드는 401 Unauthorized로 매핑되어야 한다', () => {
       // given
       process.env.IS_LOCAL = 'false';
-      const exception = new TokenExpiredException('인증 토큰이 만료되었습니다.');
+      const exception = new TokenExpiredException(
+        '인증 토큰이 만료되었습니다.',
+      );
 
       // when
       filter.catch(exception, mockArgumentsHost);
@@ -334,7 +343,10 @@ describe('AllExceptionsFilter', () => {
     it('NestJS 내장 HttpException 발생 시 올바른 상태 코드와 메시지를 반환해야 한다', () => {
       // given
       process.env.IS_LOCAL = 'false';
-      const exception = new HttpException('권한이 없습니다.', HttpStatus.FORBIDDEN);
+      const exception = new HttpException(
+        '권한이 없습니다.',
+        HttpStatus.FORBIDDEN,
+      );
 
       // when
       filter.catch(exception, mockArgumentsHost);

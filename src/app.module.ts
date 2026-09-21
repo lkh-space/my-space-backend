@@ -8,6 +8,7 @@ import { createLoggerConfig } from './common/logger/logger.config.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { PdfModule } from './pdf/pdf.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -23,7 +24,10 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const isLocal = configService.get<boolean>('app.isLocal', false);
-        const logLevel = configService.get<string>('app.logLevel', isLocal ? 'debug' : 'info');
+        const logLevel = configService.get<string>(
+          'app.logLevel',
+          isLocal ? 'debug' : 'info',
+        );
         return createLoggerConfig({ isLocal, logLevel });
       },
     }),
@@ -34,6 +38,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       appSecret: 'YOUR_APP_SECRET',
       serviceId: 'my-space-backend',
     }),
+    PdfModule,
   ],
   controllers: [AppController],
   providers: [
