@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Params } from 'nestjs-pino';
 import pino from 'pino';
 
+import { maskSensitiveData } from './sensitive-data.masker.js';
+
 /**
  * 로거 설정 옵션 인터페이스
  */
@@ -72,9 +74,15 @@ export function createLoggerConfig(options?: LoggerConfigOptions): Params {
       },
 
       // HTTP 요청 로그에 'HTTP' 컨텍스트 및 공통 메타데이터 주입
-      customProps: (req: IncomingMessage, res: ServerResponse) => ({
+      customProps: (_req: IncomingMessage, _res: ServerResponse) => ({
         context: 'HTTP',
       }),
+
+      // 로그 레코드 직렬화 시 민감 정보(비밀번호, 토큰 등) 재귀 마스킹 적용
+      formatters: {
+        log: (object: Record<string, unknown>) =>
+          maskSensitiveData(object) as Record<string, unknown>,
+      },
 
       // 에러 객체 표준 직렬화
       serializers: {
@@ -100,11 +108,28 @@ export function createLoggerConfig(options?: LoggerConfigOptions): Params {
           'req.headers.authorization',
           'req.headers.cookie',
           'req.body.password',
+          'req.body.passwords',
+          'req.body.passwordConfirm',
           'req.body.token',
+          'req.body.accessToken',
           'req.body.refreshToken',
+          'req.body.apiKey',
+          'req.body.secret',
           '*.password',
+          '*.passwords',
+          '*.passwordConfirm',
+          '*.currentPassword',
+          '*.newPassword',
+          '*.token',
+          '*.accessToken',
+          '*.refreshToken',
+          '*.apiKey',
+          '*.secret',
+          '*.creditCard',
+          '*.ssn',
+          '*.pin',
         ],
-        censor: '[REDACTED]',
+        censor: '****',
       },
 
       // 자동 HTTP 요청 완료 로그 메시지
