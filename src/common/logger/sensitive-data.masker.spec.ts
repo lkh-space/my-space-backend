@@ -124,4 +124,34 @@ describe('sensitive-data.masker (BDD 단위 테스트)', () => {
     expect(SENSITIVE_FIELDS).toContain('ssn');
     expect(SENSITIVE_FIELDS).toContain('pin');
   });
+
+  it('순환 참조(Circular Reference)가 있는 객체도 스택 오버플로우 없이 [Circular]로 처리한다', () => {
+    // given
+    const circularObj: any = {
+      name: 'root',
+      password: 'secretPassword',
+    };
+    circularObj.self = circularObj;
+
+    // when
+    const result = maskSensitiveData(circularObj) as any;
+
+    // then
+    expect(result.password).toBe('****');
+    expect(result.self).toBe('[Circular]');
+  });
+
+  it('순수 객체(Plain Object)가 아닌 커스텀 클래스 인스턴스는 재귀 순회하지 않고 원본을 반환한다', () => {
+    // given
+    class CustomService {
+      public token = 'service-token';
+    }
+    const instance = new CustomService();
+
+    // when
+    const result = maskSensitiveData(instance);
+
+    // then
+    expect(result).toBe(instance);
+  });
 });
