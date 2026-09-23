@@ -78,8 +78,11 @@ export function createLoggerConfig(options?: LoggerConfigOptions): Params {
         context: 'HTTP',
       }),
 
-      // 로그 레코드 직렬화 시 민감 정보(비밀번호, 토큰 등) 재귀 마스킹 적용
+      // 로그 레코드 직렬화 포맷터 설정
       formatters: {
+        // level 값을 숫자(30, 50 등) 대신 문자열("info", "error" 등)로 출력
+        level: (label: string) => ({ level: label }),
+        // 민감 정보(비밀번호, 토큰 등) 재귀 마스킹 적용
         log: (object: Record<string, unknown>) =>
           maskSensitiveData(object) as Record<string, unknown>,
       },
