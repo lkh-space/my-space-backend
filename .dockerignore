@@ -1,0 +1,31 @@
+# 의존성 및 빌드 아티팩트
+node_modules
+dist
+.pnpm-store
+
+# 버전 관리 및 설정
+.git
+.gitignore
+
+# 에이전트 및 문서
+.agents
+docs
+*.md
+
+# 테스트 및 커버리지
+test
+coverage
+vitest.config.*
+
+# 환경 변수 및 임시 파일
+.env*
+!.env.example
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS 생성 파일
+.DS_Store
+Thumbs.db
