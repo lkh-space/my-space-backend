@@ -1,0 +1,61 @@
+name: Build and Push Docker Image
+
+run-name: Build & Push by @${{ github.actor }} (${{ github.ref_name }})
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: '빌드할 브랜치 또는 태그 (기본: main)'
+        required: false
+        default: 'main'
+        type: string
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      # 공식 최신 안정 버전은 v4입니다 (v5는 미출시 상태이므로 v4 유지 필수)
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+
+      # BuildKit 빌더 세팅 (v3 최신)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Docker Hub 로그인 (TOKEN 또는 PASSWORD 둘 중 등록된 것으로 자동 대응)
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKERHUB_PASSWORD }}
+
+      # 태그 자동 생성: latest + 커밋 단축 SHA (v5 최신)
+      - name: Extract Docker metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/my-space-backend
+          tags: |
+            type=raw,value=latest,enable=${{ (inputs.branch || github.ref_name) == 'main' }}
+            type=sha,format=short,prefix=sha-
+
+      # BuildKit 캐시 마운트 및 amd64 빌드 & 푸시 (v6 최신)
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
