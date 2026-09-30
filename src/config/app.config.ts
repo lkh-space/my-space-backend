@@ -16,5 +16,9 @@ export const appConfig = registerAs('app', () => {
     nodeEnv: process.env.NODE_ENV || 'development',
     isLocal,
     logLevel: process.env.LOG_LEVEL || defaultLogLevel,
+    corsOrigins: (process.env.CORS_ORIGIN || '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0),
   };
 });

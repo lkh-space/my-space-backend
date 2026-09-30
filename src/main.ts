@@ -32,6 +32,24 @@ async function bootstrap() {
     },
   });
 
+  // CORS 설정
+  const defaultOrigins = [
+    'https://my-space.homelab.local',
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ];
+  const envCorsOrigins = configService.get<string[]>('app.corsOrigins') ?? [];
+  const allowedOrigins = Array.from(
+    new Set([...defaultOrigins, ...envCorsOrigins]),
+  );
+
+  app.enableCors({
+    origin: allowedOrigins,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
+  });
+
   await app.listen(port);
   logger.log(`Application is running on port ${port}`, 'Bootstrap');
   logger.log(
