@@ -1,14 +1,16 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
 import { LoggerModule } from 'nestjs-pino';
 import { appConfig, validateEnv } from './config/index.js';
 import { createLoggerConfig } from './common/logger/logger.config.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
+import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PdfModule } from './pdf/pdf.module.js';
+import { AuthModule } from './auth/auth.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -39,6 +41,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       serviceId: 'my-space-backend',
     }),
     PdfModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [
@@ -46,6 +49,10 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditLogInterceptor,
     },
   ],
 })

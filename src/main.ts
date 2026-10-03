@@ -23,6 +23,7 @@ async function bootstrap() {
     )
     .setVersion('1.0.0')
     .addTag('PDF', 'PDF 파일 정보 검사, 암호 해제, 병합 및 분할 API')
+    .addTag('Auth', 'Authelia SSO 기반 사용자 프로필 및 권한 정보 API')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
