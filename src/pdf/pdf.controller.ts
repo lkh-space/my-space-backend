@@ -20,8 +20,10 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { PdfService } from './pdf.service.js';
-import { InspectPdfResponseDto } from './dto/inspect-pdf.dto.js';
-import { InspectPdfDto } from './dto/inspect-pdf.dto.js';
+import {
+  InspectPdfDto,
+  InspectPdfResponseDto,
+} from './dto/inspect-pdf.dto.js';
 import { UnlockPdfDto } from './dto/unlock-pdf.dto.js';
 import { MergePdfDto } from './dto/merge-pdf.dto.js';
 import { SplitAllPdfDto, SplitRangePdfDto } from './dto/split-pdf.dto.js';

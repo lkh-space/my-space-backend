@@ -47,7 +47,7 @@ describe('AuditLogInterceptor', () => {
     const context = createMockContext({
       method: 'POST',
       originalUrl: '/api/v1/pdf/merge',
-      user: { username: 'admin' },
+      user: { username: 'admin', groups: ['admins'] },
     }, 200);
 
     const callHandler: CallHandler = {
@@ -100,7 +100,7 @@ describe('AuditLogInterceptor', () => {
   it('요청 실패(에러 발생) 시 logger.warn으로 에러 및 상태 코드를 기록한다', async () => {
     // given
     const context = createMockContext({
-      user: { username: 'bad-actor' },
+      user: { username: 'bad-actor', groups: [] },
       originalUrl: '/api/v1/secure',
     });
 

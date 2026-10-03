@@ -1,4 +1,9 @@
+import { z } from 'zod';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export const inspectPdfSchema = z.object({
+  password: z.string().optional(),
+});
 
 export class PdfMetadataDto {
   @ApiPropertyOptional({ description: '문서 제목', example: 'Sample Report' })
@@ -38,6 +43,8 @@ export class InspectPdfResponseDto {
 }
 
 export class InspectPdfDto {
+  static readonly schema = inspectPdfSchema;
+
   @ApiPropertyOptional({
     description: '암호화된 PDF 파일인 경우 검증할 비밀번호',
     example: 'my-password',

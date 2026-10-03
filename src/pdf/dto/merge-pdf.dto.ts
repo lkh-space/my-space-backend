@@ -1,6 +1,13 @@
+import { z } from 'zod';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
+export const mergePdfSchema = z.object({
+  passwords: z.union([z.string(), z.array(z.string())]).optional(),
+});
+
 export class MergePdfDto {
+  static readonly schema = mergePdfSchema;
+
   /**
    * 각 파일에 대응하는 비밀번호 목록
    * - JSON 배열 문자열: `["pw1", "", "pw2"]`
