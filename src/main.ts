@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import { AppModule, ObserveInstrument } from './app.module.js';
+import { VersionService } from './version/version.service.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -22,6 +23,7 @@ async function bootstrap() {
       '개인 맞춤형 유틸리티 백엔드 플랫폼 REST API 명세 및 대화형 테스트 플랫폼',
     )
     .setVersion('1.0.0')
+    .addTag('System', '애플리케이션 상태 및 버전 정보 API')
     .addTag('PDF', 'PDF 파일 정보 검사, 암호 해제, 병합 및 분할 API')
     .addTag('Auth', 'Authelia SSO 기반 사용자 프로필 및 권한 정보 API')
     .build();
@@ -52,7 +54,14 @@ async function bootstrap() {
   });
 
   await app.listen(port);
-  logger.log(`Application is running on port ${port}`, 'Bootstrap');
+
+  const versionService = app.get(VersionService);
+  const versionInfo = versionService.getVersionInfo();
+
+  logger.log(
+    `Application is running on port ${port} [name=${versionInfo.name}, version=${versionInfo.version}, branch=${versionInfo.gitBranch}, commit=${versionInfo.gitCommit}, env=${versionInfo.env}]`,
+    'Bootstrap',
+  );
   logger.log(
     `Swagger UI가 활성화되었습니다: http://localhost:${port}/docs`,
     'Bootstrap',

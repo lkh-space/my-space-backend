@@ -58,6 +58,15 @@ RUN pnpm run build
 # ==========================================
 FROM base AS runner
 
+# 빌드 시점에 주입받을 형상 메타데이터 인자
+ARG GIT_COMMIT=local
+ARG GIT_BRANCH=unknown
+ARG BUILD_TIME=unknown
+
+ENV GIT_COMMIT=${GIT_COMMIT} \
+    GIT_BRANCH=${GIT_BRANCH} \
+    BUILD_TIME=${BUILD_TIME}
+
 WORKDIR /app
 
 # 컨테이너 보안을 위해 비루트(node) 사용자 권한으로 전환
