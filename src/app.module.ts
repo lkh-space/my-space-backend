@@ -13,6 +13,7 @@ import { AppService } from './app.service.js';
 import { PdfModule } from './pdf/pdf.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { VersionModule } from './version/version.module.js';
+import { HealthModule } from './health/health.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -45,6 +46,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     PdfModule,
     AuthModule,
     VersionModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [
