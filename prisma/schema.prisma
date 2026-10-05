@@ -1,0 +1,89 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. 계층형 폴더 (물리적/계층적 분류)
+model Folder {
+  id        String     @id @default(uuid())
+  name      String     @db.VarChar(100)
+  parentId  String?    @map("parent_id")
+  parent    Folder?    @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]   @relation("FolderHierarchy")
+  ownerId   String     @map("owner_id") @db.VarChar(100)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  documents Document[]
+
+  @@unique([name, parentId, ownerId])
+  @@index([ownerId])
+  @@map("folders")
+}
+
+// 2. 문서 메타데이터
+model Document {
+  id             String             @id @default(uuid())
+  title          String             @db.VarChar(255)
+  folderId       String?            @map("folder_id")
+  folder         Folder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  ownerId        String             @map("owner_id") @db.VarChar(100)
+  currentVersion Int                @default(1) @map("current_version")
+  objectKey      String             @map("object_key") @db.VarChar(255)
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  tags           DocumentTag[]
+  revisions      DocumentRevision[]
+
+  @@index([ownerId])
+  @@index([folderId])
+  @@map("documents")
+}
+
+// 3. 태그 (논리적/다중 분류)
+model Tag {
+  id        String        @id @default(uuid())
+  name      String        @db.VarChar(50)
+  ownerId   String        @map("owner_id") @db.VarChar(100)
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  documents DocumentTag[]
+
+  @@unique([name, ownerId])
+  @@index([ownerId])
+  @@map("tags")
+}
+
+// 4. 문서-태그 N:M 조인 테이블
+model DocumentTag {
+  documentId String   @map("document_id")
+  tagId      String   @map("tag_id")
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, tagId])
+  @@map("document_tags")
+}
+
+// 5. 문서 수정 이력 (Revision History)
+model DocumentRevision {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version    Int
+  title      String   @db.VarChar(255)
+  objectKey  String   @map("object_key") @db.VarChar(255)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([documentId, version])
+  @@index([documentId])
+  @@map("document_revisions")
+}

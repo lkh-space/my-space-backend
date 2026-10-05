@@ -3,7 +3,13 @@ import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
 import { LoggerModule } from 'nestjs-pino';
-import { appConfig, validateEnv } from './config/index.js';
+import {
+  appConfig,
+  databaseConfig,
+  minioConfig,
+  opensearchConfig,
+  validateEnv,
+} from './config/index.js';
 import { createLoggerConfig } from './common/logger/logger.config.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor.js';
@@ -14,6 +20,8 @@ import { PdfModule } from './pdf/pdf.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { VersionModule } from './version/version.module.js';
 import { HealthModule } from './health/health.module.js';
+import { StorageModule } from './storage/storage.module.js';
+import { MarkdownModule } from './markdown/markdown.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -21,9 +29,10 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig],
+      load: [appConfig, databaseConfig, minioConfig, opensearchConfig],
       validate: validateEnv,
     }),
+    StorageModule,
     LoggerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -47,6 +56,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AuthModule,
     VersionModule,
     HealthModule,
+    MarkdownModule,
   ],
   controllers: [AppController],
   providers: [

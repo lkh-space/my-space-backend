@@ -26,6 +26,12 @@ async function bootstrap() {
     .addTag('System', '애플리케이션 상태 및 버전 정보 API')
     .addTag('PDF', 'PDF 파일 정보 검사, 암호 해제, 병합 및 분할 API')
     .addTag('Auth', 'Authelia SSO 기반 사용자 프로필 및 권한 정보 API')
+    .addTag('Markdown Documents', '개인 마크다운 문서 생성, 조회, 수정, 삭제 및 Import/Export API')
+    .addTag('Markdown Folders', '계층형 문서 폴더 관리 API')
+    .addTag('Markdown Tags', '논리적 문서 태그 목록 및 통계 API')
+    .addTag('Markdown Revisions', '문서 수정 이력, 버전 비교 및 복원 API')
+    .addTag('Markdown Search', 'OpenSearch 기반 본문/제목/태그 풀텍스트 검색 API')
+    .addTag('Markdown Assets', '마크다운 첨부 이미지 업로드 및 스트리밍 API')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);

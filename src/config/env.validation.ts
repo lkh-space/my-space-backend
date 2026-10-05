@@ -14,6 +14,41 @@ export const envSchema = z.object({
     .transform((val) => val === 'true'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).optional(),
   CORS_ORIGIN: z.string().optional(),
+
+  // Database (PostgreSQL)
+  DATABASE_URL: z.string().optional(),
+  DATABASE_HOST: z.string().optional(),
+  DATABASE_PORT: z.coerce.number().int().optional(),
+  DATABASE_USER: z.string().optional(),
+  DATABASE_PASSWORD: z.string().optional(),
+  DATABASE_NAME: z.string().optional(),
+
+  // MinIO
+  MINIO_ENDPOINT: z.string().optional(),
+  MINIO_PORT: z.coerce.number().int().optional(),
+  MINIO_USE_SSL: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  MINIO_ACCESS_KEY: z.string().optional(),
+  MINIO_SECRET_KEY: z.string().optional(),
+  MINIO_BUCKET_DOCS: z.string().default('my-space-markdown'),
+  MINIO_BUCKET_ASSETS: z.string().default('my-space-assets'),
+  MINIO_REGION: z.string().default('us-east-1'),
+  MINIO_FORCE_PATH_STYLE: z
+    .string()
+    .optional()
+    .transform((val) => val !== 'false'),
+
+  // OpenSearch
+  OPENSEARCH_NODE: z.string().optional(),
+  OPENSEARCH_USERNAME: z.string().optional(),
+  OPENSEARCH_PASSWORD: z.string().optional(),
+  OPENSEARCH_REJECT_UNAUTHORIZED: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  OPENSEARCH_INDEX_DOCS: z.string().default('markdown-documents'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
