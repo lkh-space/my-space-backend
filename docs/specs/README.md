@@ -52,4 +52,5 @@
 | [version-info](./version-info.md) | 애플리케이션 버전(`package.json`), Git 브랜치, 커밋 해시 및 빌드 메타데이터 조회 사양서 | implemented |
 | [health-check](./health-check.md) | Kubernetes 프로브 연동용 서버 헬스체크 및 런타임 상태 조회 사양서 | implemented |
 | [markdown-documents](./markdown-documents.md) | Markdown 문서 관리, 계층형 폴더, 태그, 버전 이력, OpenSearch 풀텍스트 검색 및 MinIO 에셋 저장 사양서 | implemented |
+| [ai-workspace](./ai-workspace.md) | AI Workspace 독립 서버, Gemini 3.8 Flash, Ollama, Qdrant 시맨틱 검색, RabbitMQ 비동기 인덱싱 사양서 | implemented |
 

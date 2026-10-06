@@ -1,0 +1,89 @@
+# ==========================================
+# Stage 1: Base (공통 Node.js 환경 및 OS 도구)
+# ==========================================
+FROM node:24-bookworm-slim AS base
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+# Corepack 활성화 및 pnpm 버전 고정 (package.json의 packageManager와 동기화)
+RUN corepack enable && corepack prepare pnpm@12.4.2 --activate && \
+    pnpm config set store-dir /pnpm/store
+
+# PID 1 프로세스 관리자(dumb-init) 설치 (qpdf 불필요)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dumb-init \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /app && chown -R node:node /app
+WORKDIR /app
+
+# ==========================================
+# Stage 2: Prod-Deps (프로덕션 의존성 병렬 설치)
+# ==========================================
+FROM base AS prod-deps
+
+# pnpm lifecycle 빌드 승인 정책(allowBuilds)이 담긴 pnpm-workspace.yaml 포함 복사
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
+
+# BuildKit 캐시 마운트를 적용하여 패키지 스토어를 로컬 디스크에 영구 캐싱
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --prod --frozen-lockfile
+
+# ==========================================
+# Stage 3: Deps (전체 의존성 설치 - 빌드용)
+# ==========================================
+FROM base AS deps
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# ==========================================
+# Stage 4: Builder (AI Workspace 애플리케이션 컴파일)
+# ==========================================
+FROM base AS builder
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* tsconfig*.json nest-cli.json ./
+COPY prisma ./prisma
+COPY libs ./libs
+COPY apps ./apps
+
+# Prisma 클라이언트 코드 생성
+RUN pnpm prisma generate
+
+# AI 앱 빌드
+RUN pnpm run build:ai
+
+# ==========================================
+# Stage 5: Runner (최종 프로덕션 런타임 이미지)
+# ==========================================
+FROM base AS runner
+
+# 빌드 시점에 주입받을 형상 메타데이터 인자
+ARG GIT_COMMIT=local
+ARG GIT_BRANCH=unknown
+ARG BUILD_TIME=unknown
+
+ENV APP_NAME=ai \
+    GIT_COMMIT=${GIT_COMMIT} \
+    GIT_BRANCH=${GIT_BRANCH} \
+    BUILD_TIME=${BUILD_TIME}
+
+WORKDIR /app
+
+# 컨테이너 보안을 위해 비루트(node) 사용자 권한으로 전환
+USER node
+
+# 프로덕션 실행에 필요한 아티팩트 복사
+COPY --chown=node:node package.json ./
+COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
+COPY --chown=node:node --from=builder /app/node_modules/.pnpm/@prisma* ./node_modules/.pnpm/
+COPY --chown=node:node --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --chown=node:node --from=builder /app/dist ./dist
+
+# dumb-init을 통한 정상적인 시그널(SIGTERM/SIGINT) 처리 및 좀비 프로세스 방지
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["node", "dist/apps/ai/main.js"]

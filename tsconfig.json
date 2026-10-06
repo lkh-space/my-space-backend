@@ -17,6 +17,14 @@
     "skipLibCheck": true,
     "strict": true,
     "strictPropertyInitialization": false,
+    "paths": {
+      "@app/common": ["./libs/common/src"],
+      "@app/common/*": ["./libs/common/src/*"],
+      "@app/storage": ["./libs/storage/src"],
+      "@app/storage/*": ["./libs/storage/src/*"],
+      "@app/config": ["./libs/config/src"],
+      "@app/config/*": ["./libs/config/src/*"]
+    },
     "types": ["vitest/globals", "node", "multer"]
   }
 }

@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
-import { appConfig, validateEnv } from '../../src/config/index.js';
-import { AllExceptionsFilter } from '../../src/common/filters/all-exceptions.filter.js';
-import { AppController } from '../../src/app.controller.js';
-import { AppService } from '../../src/app.service.js';
-import { PdfModule } from '../../src/pdf/pdf.module.js';
+import { appConfig, validateEnv } from '@app/config/index.js';
+import { AllExceptionsFilter } from '@app/common/filters/all-exceptions.filter.js';
+import { AppController } from '../../apps/api/src/app.controller.js';
+import { AppService } from '../../apps/api/src/app.service.js';
+import { PdfModule } from '../../apps/api/src/pdf/pdf.module.js';
 
 @Module({
   imports: [

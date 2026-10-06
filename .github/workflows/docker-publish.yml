@@ -1,14 +1,22 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image (API)
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'apps/api/**'
+      - 'libs/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'Dockerfile.api'
+      - '.github/workflows/docker-publish.yml'
   workflow_dispatch:
 
 jobs:
   build-and-push:
-    name: Build & Push Docker Image
+    name: Build & Push Docker Image (API)
     runs-on: ubuntu-latest
 
     steps:
@@ -41,7 +49,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
+          file: ./Dockerfile.api
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

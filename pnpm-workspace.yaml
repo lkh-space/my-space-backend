@@ -5,3 +5,5 @@ allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   workerd: false
+  '@google/genai': true
+  protobufjs: true

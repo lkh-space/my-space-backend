@@ -1,0 +1,50 @@
+name: Continuous Integration (CI)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    name: Lint, Test & Build Monorepo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install system dependencies (qpdf)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qpdf
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm prisma generate
+
+      - name: Run Linter (oxlint)
+        run: pnpm run lint
+
+      - name: Run Unit Tests (vitest)
+        run: pnpm run test
+
+      - name: Run Monorepo Build (nest build api && nest build ai)
+        run: pnpm run build

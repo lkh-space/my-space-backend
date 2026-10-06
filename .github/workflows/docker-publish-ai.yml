@@ -1,0 +1,95 @@
+name: Build and Push Docker Image (AI)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/ai/**'
+      - 'libs/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'Dockerfile.ai'
+      - '.github/workflows/docker-publish-ai.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image (AI)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Docker metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/my-space-ai
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch || 'main') }}
+            type=sha,format=short,prefix=sha-
+
+      - name: Get current timestamp
+        id: time
+        run: echo "timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.ai
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
+            BUILD_TIME=${{ steps.time.outputs.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Checkout homelab-infra
+        uses: actions/checkout@v5
+        continue-on-error: true
+        with:
+          repository: 'lkh-space/homelab-infra'
+          token: ${{ secrets.INFRA_DEPLOY_TOKEN || secrets.GH_PAT || secrets.PERSONAL_ACCESS_TOKEN }}
+          path: 'homelab-infra'
+
+      - name: Update AI image tag in GitOps repo
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG="sha-${SHORT_SHA}"
+          echo "Updating AI image tag to ${IMAGE_TAG}..."
+
+          if [ -d "homelab-infra/k8s/apps/ai" ] && [ -f "homelab-infra/k8s/apps/ai/kustomization.yaml" ]; then
+            cd homelab-infra/k8s/apps/ai
+            sed -i.bak -E "s/(newTag:).*/\1 ${IMAGE_TAG}/" kustomization.yaml
+            rm -f kustomization.yaml.bak
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add kustomization.yaml
+            if git diff --staged --quiet; then
+              echo "No changes to commit"
+            else
+              git commit -m "chore(ai): update image tag to ${IMAGE_TAG}"
+              git pull --rebase origin main
+              git push origin main
+            fi
+          else
+            echo "homelab-infra/k8s/apps/ai/kustomization.yaml 이 아직 존재하지 않습니다. 인프라 매니페스트 생성 후 자동으로 연동됩니다."
+          fi
