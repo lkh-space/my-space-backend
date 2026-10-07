@@ -7,3 +7,5 @@ allowBuilds:
   workerd: false
   '@google/genai': true
   protobufjs: true
+  cpu-features: true
+  ssh2: true
