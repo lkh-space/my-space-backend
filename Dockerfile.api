@@ -20,19 +20,7 @@ RUN mkdir -p /app && chown -R node:node /app
 WORKDIR /app
 
 # ==========================================
-# Stage 2: Prod-Deps (프로덕션 의존성 병렬 설치)
-# ==========================================
-FROM base AS prod-deps
-
-# pnpm lifecycle 빌드 승인 정책(allowBuilds)이 담긴 pnpm-workspace.yaml 포함 복사
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
-
-# BuildKit 캐시 마운트를 적용하여 패키지 스토어를 로컬 디스크에 영구 캐싱
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --prod --frozen-lockfile
-
-# ==========================================
-# Stage 3: Deps (전체 의존성 설치 - 빌드용)
+# Stage 2: Deps (전체 의존성 설치 - 빌드용)
 # ==========================================
 FROM base AS deps
 
@@ -42,7 +30,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
 # ==========================================
-# Stage 4: Builder (API 애플리케이션 컴파일)
+# Stage 3: Builder (API 애플리케이션 컴파일 및 프로덕션 슬림화)
 # ==========================================
 FROM base AS builder
 
@@ -58,8 +46,12 @@ RUN pnpm prisma generate
 # API 앱 빌드
 RUN pnpm run build:api
 
+# 개발용 의존성을 제거하여 프로덕션 런타임 의존성만 보존 (pnpm 심볼릭 링크 구조 및 Prisma 클라이언트 완전 유지)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm prune --prod
+
 # ==========================================
-# Stage 5: Runner (최종 프로덕션 런타임 이미지)
+# Stage 4: Runner (최종 프로덕션 런타임 이미지)
 # ==========================================
 FROM base AS runner
 
@@ -80,9 +72,7 @@ USER node
 
 # 프로덕션 실행에 필요한 아티팩트 복사
 COPY --chown=node:node package.json ./
-COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
-COPY --chown=node:node --from=builder /app/node_modules/.pnpm/@prisma* ./node_modules/.pnpm/
-COPY --chown=node:node --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
 
 # dumb-init을 통한 정상적인 시그널(SIGTERM/SIGINT) 처리 및 좀비 프로세스 방지
