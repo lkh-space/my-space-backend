@@ -11,6 +11,8 @@ export const aiSearchSchema = z.object({
 export type AiSearchInput = z.infer<typeof aiSearchSchema>;
 
 export class AiSearchDto {
+  static readonly schema = aiSearchSchema;
+
   @ApiProperty({ description: '시맨틱 검색 키워드 또는 자연어 질의', example: 'NestJS 아키텍처 설계' })
   query!: string;
 

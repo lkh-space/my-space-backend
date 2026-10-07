@@ -4,6 +4,7 @@ import {
   Body,
   UseGuards,
   HttpStatus,
+  HttpCode,
   UsePipes,
   Res,
 } from '@nestjs/common';
@@ -33,6 +34,7 @@ export class AiChatController {
   constructor(private readonly chatService: AiChatService) {}
 
   @Post()
+  @HttpCode(HttpStatus.OK)
   @UsePipes(new ZodValidationPipe(aiChatSchema))
   @ApiOperation({
     summary: 'AI 대화 (단발성 JSON 응답)',
@@ -51,6 +53,7 @@ export class AiChatController {
   }
 
   @Post('stream')
+  @HttpCode(HttpStatus.OK)
   @UsePipes(new ZodValidationPipe(aiChatSchema))
   @ApiOperation({
     summary: 'AI 대화 실시간 SSE 스트리밍',
@@ -61,6 +64,7 @@ export class AiChatController {
     @Body() dto: AiChatDto,
     @Res() res: Response,
   ): Promise<void> {
+    res.status(HttpStatus.OK);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');

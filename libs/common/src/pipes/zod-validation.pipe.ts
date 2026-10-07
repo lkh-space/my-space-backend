@@ -20,6 +20,11 @@ export class ZodValidationPipe implements PipeTransform {
   constructor(@Optional() private readonly schema?: ZodTypeAny) {}
 
   transform(value: unknown, metadata: ArgumentMetadata): unknown {
+    // 커스텀 데코레이터(예: @CurrentUser)의 경우 Zod 유효성 검증을 건너뜁니다.
+    if (metadata?.type === 'custom') {
+      return value;
+    }
+
     const targetSchema =
       this.schema ||
       (metadata?.metatype &&

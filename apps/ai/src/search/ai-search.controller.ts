@@ -4,6 +4,7 @@ import {
   Body,
   UseGuards,
   HttpStatus,
+  HttpCode,
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
@@ -31,6 +32,7 @@ export class AiSearchController {
   constructor(private readonly searchService: AiSearchService) {}
 
   @Post()
+  @HttpCode(HttpStatus.OK)
   @UsePipes(new ZodValidationPipe(aiSearchSchema))
   @ApiOperation({
     summary: '개인 마크다운 문서 시맨틱 검색',

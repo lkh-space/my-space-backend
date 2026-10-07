@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Readable } from 'node:stream';
+import type {
+  QdrantPointPayload,
+  QdrantSearchResult,
+} from '@app/storage/qdrant/qdrant.service.js';
 
 @Injectable()
 export class FakeMinioService {
@@ -80,3 +84,76 @@ export class FakeRabbitmqService {
 
   async consume(): Promise<void> {}
 }
+
+@Injectable()
+export class FakeQdrantService {
+  readonly collectionName = 'test-personal-documents';
+  readonly vectorDimension = 768;
+
+  private points: Array<{
+    id: string;
+    vector: number[];
+    payload: QdrantPointPayload;
+  }> = [];
+
+  async onModuleInit(): Promise<void> {}
+
+  async ensureCollection(): Promise<void> {}
+
+  async upsertPoints(
+    points: Array<{
+      id: string;
+      vector: number[];
+      payload: QdrantPointPayload;
+    }>,
+  ): Promise<void> {
+    for (const p of points) {
+      const idx = this.points.findIndex((item) => item.id === p.id);
+      if (idx >= 0) {
+        this.points[idx] = p;
+      } else {
+        this.points.push(p);
+      }
+    }
+  }
+
+  async deletePointsByDocument(ownerId: string, documentId: string): Promise<void> {
+    this.points = this.points.filter(
+      (p) => !(p.payload.ownerId === ownerId && p.payload.documentId === documentId),
+    );
+  }
+
+  async searchPoints(
+    ownerId: string,
+    _vector: number[],
+    limit = 5,
+    filterOptions?: { folderId?: string | null; tags?: string[] },
+  ): Promise<QdrantSearchResult[]> {
+    let matched = this.points.filter((p) => p.payload.ownerId === ownerId);
+
+    if (filterOptions?.folderId !== undefined && filterOptions.folderId !== null) {
+      matched = matched.filter((p) => p.payload.folderId === filterOptions.folderId);
+    }
+
+    if (filterOptions?.tags && filterOptions.tags.length > 0) {
+      matched = matched.filter((p) =>
+        filterOptions.tags!.some((tag) => p.payload.tags?.includes(tag)),
+      );
+    }
+
+    return matched.slice(0, limit).map((p, idx) => ({
+      id: p.id,
+      score: 0.95 - idx * 0.01,
+      payload: p.payload,
+    }));
+  }
+
+  getAllPoints(): Array<{ id: string; vector: number[]; payload: QdrantPointPayload }> {
+    return [...this.points];
+  }
+
+  clear(): void {
+    this.points = [];
+  }
+}
+

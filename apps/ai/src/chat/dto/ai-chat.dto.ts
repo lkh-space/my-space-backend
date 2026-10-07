@@ -23,6 +23,8 @@ export class ChatMessageDto {
 }
 
 export class AiChatDto {
+  static readonly schema = aiChatSchema;
+
   @ApiProperty({ type: [ChatMessageDto], description: '대화 히스토리 및 현재 사용자 메시지' })
   messages!: ChatMessageDto[];
 
