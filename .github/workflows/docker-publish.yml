@@ -36,10 +36,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/my-space-api
+          images: chungdaeking/my-space-api
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch || 'main') }}
-            type=sha,format=short,prefix=sha-
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest
 
       - name: Get current timestamp
         id: time
@@ -60,41 +60,3 @@ jobs:
             BUILD_TIME=${{ steps.time.outputs.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Checkout homelab-infra
-        uses: actions/checkout@v5
-        with:
-          repository: 'lkh-space/homelab-infra'
-          token: ${{ secrets.INFRA_DEPLOY_TOKEN || secrets.GH_PAT || secrets.PERSONAL_ACCESS_TOKEN }}
-          path: 'homelab-infra'
-
-      - name: Update API image tag in GitOps repo
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          IMAGE_TAG="sha-${SHORT_SHA}"
-          echo "Updating API image tag to ${IMAGE_TAG}..."
-
-          TARGET_DIR="homelab-infra/k8s/apps/api"
-          if [ ! -d "$TARGET_DIR" ] && [ -d "homelab-infra/k8s/apps/backend" ]; then
-            TARGET_DIR="homelab-infra/k8s/apps/backend"
-          fi
-
-          if [ -d "$TARGET_DIR" ] && [ -f "$TARGET_DIR/kustomization.yaml" ]; then
-            cd "$TARGET_DIR"
-            sed -i.bak -E "s/(newTag:).*/\1 ${IMAGE_TAG}/" kustomization.yaml
-            rm -f kustomization.yaml.bak
-
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add kustomization.yaml
-            if git diff --staged --quiet; then
-              echo "No changes to commit"
-            else
-              git commit -m "chore(api): update image tag to ${IMAGE_TAG}"
-              git pull --rebase origin main
-              git push origin main
-            fi
-          else
-            echo "kustomization.yaml을 찾을 수 없습니다: $TARGET_DIR"
-            exit 1
-          fi
