@@ -68,23 +68,33 @@ jobs:
           token: ${{ secrets.INFRA_DEPLOY_TOKEN || secrets.GH_PAT || secrets.PERSONAL_ACCESS_TOKEN }}
           path: 'homelab-infra'
 
-      - name: Update backend image tag in GitOps repo
+      - name: Update API image tag in GitOps repo
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           IMAGE_TAG="sha-${SHORT_SHA}"
-          echo "Updating backend image tag to ${IMAGE_TAG}..."
+          echo "Updating API image tag to ${IMAGE_TAG}..."
 
-          cd homelab-infra/k8s/apps/backend
-          sed -i.bak -E "s/(newTag:).*/\1 ${IMAGE_TAG}/" kustomization.yaml
-          rm -f kustomization.yaml.bak
+          TARGET_DIR="homelab-infra/k8s/apps/api"
+          if [ ! -d "$TARGET_DIR" ] && [ -d "homelab-infra/k8s/apps/backend" ]; then
+            TARGET_DIR="homelab-infra/k8s/apps/backend"
+          fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add kustomization.yaml
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
+          if [ -d "$TARGET_DIR" ] && [ -f "$TARGET_DIR/kustomization.yaml" ]; then
+            cd "$TARGET_DIR"
+            sed -i.bak -E "s/(newTag:).*/\1 ${IMAGE_TAG}/" kustomization.yaml
+            rm -f kustomization.yaml.bak
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add kustomization.yaml
+            if git diff --staged --quiet; then
+              echo "No changes to commit"
+            else
+              git commit -m "chore(api): update image tag to ${IMAGE_TAG}"
+              git pull --rebase origin main
+              git push origin main
+            fi
           else
-            git commit -m "chore(backend): update image tag to ${IMAGE_TAG}"
-            git pull --rebase origin main
-            git push origin main
+            echo "kustomization.yaml을 찾을 수 없습니다: $TARGET_DIR"
+            exit 1
           fi
