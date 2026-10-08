@@ -158,7 +158,7 @@ $ cp .env.ai.example .env.ai
 
 ```bash
 # API 서버 컨테이너 빌드 (PDF 조작용 qpdf 포함)
-$ docker build -f Dockerfile.api -t my-space-backend:latest .
+$ docker build -f Dockerfile.api -t my-space-api:latest .
 
 # AI Workspace 서버 컨테이너 빌드 (경량 dumb-init 전용 런타임)
 $ docker build -f Dockerfile.ai -t my-space-ai:latest .
