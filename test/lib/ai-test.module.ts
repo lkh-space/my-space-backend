@@ -15,6 +15,7 @@ import {
 import { AllExceptionsFilter } from '@app/common/filters/all-exceptions.filter.js';
 import { AuditLogInterceptor } from '@app/common/interceptors/audit-log.interceptor.js';
 import { ZodValidationPipe } from '@app/common/pipes/zod-validation.pipe.js';
+import { HealthModule } from '@app/common';
 import { StorageModule } from '@app/storage/storage.module.js';
 
 import { AiSearchController } from '../../apps/ai/src/search/ai-search.controller.js';
@@ -54,6 +55,7 @@ import { TestService } from './test.service.js';
       },
     }),
     StorageModule,
+    HealthModule,
   ],
   controllers: [AiSearchController, AiChatController],
   providers: [

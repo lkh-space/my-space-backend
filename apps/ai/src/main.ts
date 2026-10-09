@@ -17,6 +17,7 @@ async function bootstrap() {
     .setVersion('0.0.1')
     .addTag('AI Chat', 'Gemini / Ollama 실시간 스트리밍 대화 및 Tool 연동')
     .addTag('AI Search', 'Qdrant 벡터 기반 마크다운 문서 시맨틱 검색')
+    .addTag('System', '서버 헬스체크 및 런타임 상태 진단')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);

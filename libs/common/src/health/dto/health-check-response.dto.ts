@@ -16,7 +16,7 @@ export class HealthCheckResponseDto {
   status: 'ok';
 
   @ApiProperty({
-    example: '2026-10-04T08:15:30.123Z',
+    example: '2026-10-09T01:45:00.000Z',
     description: '체크 일시 (ISO 8601)',
   })
   timestamp: string;

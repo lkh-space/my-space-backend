@@ -21,7 +21,7 @@ import { AppService } from '../../apps/api/src/app.service.js';
 import { PdfModule } from '../../apps/api/src/pdf/pdf.module.js';
 import { AuthModule } from '../../apps/api/src/auth/auth.module.js';
 import { VersionModule } from '../../apps/api/src/version/version.module.js';
-import { HealthModule } from '../../apps/api/src/health/health.module.js';
+import { HealthModule } from '@app/common';
 import { MarkdownModule } from '../../apps/api/src/markdown/markdown.module.js';
 import { TestService } from './test.service.js';
 

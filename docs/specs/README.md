@@ -50,7 +50,7 @@
 | [pdf-tools](./pdf-tools.md) | PDF 조작 및 유틸리티 도메인 사양서 (PDF 병합, 범위 분할, 전권 ZIP 분할) | implemented |
 | [authelia-auth](./authelia-auth.md) | Authelia SSO Gateway 연동, 인증 가드, 로컬 Mock 및 감사 로그 사양서 | implemented |
 | [version-info](./version-info.md) | 애플리케이션 버전(`package.json`), Git 브랜치, 커밋 해시 및 빌드 메타데이터 조회 사양서 | implemented |
-| [health-check](./health-check.md) | Kubernetes 프로브 연동용 서버 헬스체크 및 런타임 상태 조회 사양서 | implemented |
+| [health-check](./health-check.md) | Kubernetes 프로브 연동 및 런타임 진단용 헬스체크 사양서 (공용 라이브러리 및 Multi-App 확장) | implemented |
 | [markdown-documents](./markdown-documents.md) | Markdown 문서 관리, 계층형 폴더, 태그, 버전 이력, OpenSearch 풀텍스트 검색 및 MinIO 에셋 저장 사양서 | implemented |
 | [ai-workspace](./ai-workspace.md) | AI Workspace 독립 서버, Gemini 3.8 Flash, Ollama, Qdrant 시맨틱 검색, RabbitMQ 비동기 인덱싱 사양서 | implemented |
 

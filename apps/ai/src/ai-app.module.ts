@@ -12,6 +12,7 @@ import {
   validateEnv,
 } from '@app/config/index.js';
 import { createLoggerConfig } from '@app/common/logger/logger.config.js';
+import { HealthModule } from '@app/common';
 import { StorageModule } from '@app/storage/storage.module.js';
 
 import { GeminiProvider } from './providers/gemini.provider.js';
@@ -41,6 +42,7 @@ import { AiChatController } from './chat/ai-chat.controller.js';
       validate: validateEnv,
     }),
     StorageModule,
+    HealthModule,
     LoggerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
