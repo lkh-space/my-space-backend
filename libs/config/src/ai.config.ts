@@ -6,8 +6,8 @@ import { registerAs } from '@nestjs/config';
 export const aiConfig = registerAs('ai', () => ({
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
-    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
-    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
+    model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
+    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
   },
   ollama: {
     baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',

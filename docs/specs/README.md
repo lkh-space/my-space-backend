@@ -53,4 +53,6 @@
 | [health-check](./health-check.md) | Kubernetes 프로브 연동 및 런타임 진단용 헬스체크 사양서 (공용 라이브러리 및 Multi-App 확장) | implemented |
 | [markdown-documents](./markdown-documents.md) | Markdown 문서 관리, 계층형 폴더, 태그, 버전 이력, OpenSearch 풀텍스트 검색 및 MinIO 에셋 저장 사양서 | implemented |
 | [ai-workspace](./ai-workspace.md) | AI Workspace 독립 서버, Gemini 3.8 Flash, Ollama, Qdrant 시맨틱 검색, RabbitMQ 비동기 인덱싱 사양서 | implemented |
+| [jarvis-voice-assistant](./jarvis-voice-assistant.md) | J.A.R.V.I.S. Neural Core 음성 비서 파이프라인 (STT/TTS, 세션 관리, SSE 텔레메트리, 인터럽트) 사양서 | implemented |
+
 

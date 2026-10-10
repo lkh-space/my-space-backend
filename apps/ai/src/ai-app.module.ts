@@ -25,6 +25,14 @@ import { AiSearchController } from './search/ai-search.controller.js';
 import { AiChatService } from './chat/ai-chat.service.js';
 import { AiChatController } from './chat/ai-chat.controller.js';
 
+import { NeuralSessionController } from './sessions/neural-session.controller.js';
+import { NeuralSessionService } from './sessions/neural-session.service.js';
+import { VoiceController } from './voice/voice.controller.js';
+import { JarvisVoiceService } from './voice/jarvis-voice.service.js';
+import { ActiveStreamRegistry } from './voice/active-stream.registry.js';
+import { AudioBufferStore } from './voice/storage/audio-buffer.store.js';
+import { MockSttProvider, MockTtsProvider } from './providers/voice/mock-voice.provider.js';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -56,7 +64,12 @@ import { AiChatController } from './chat/ai-chat.controller.js';
       },
     }),
   ],
-  controllers: [AiSearchController, AiChatController],
+  controllers: [
+    AiSearchController,
+    AiChatController,
+    NeuralSessionController,
+    VoiceController,
+  ],
   providers: [
     GeminiProvider,
     OllamaProvider,
@@ -65,6 +78,12 @@ import { AiChatController } from './chat/ai-chat.controller.js';
     AiToolsService,
     AiSearchService,
     AiChatService,
+    NeuralSessionService,
+    ActiveStreamRegistry,
+    AudioBufferStore,
+    MockSttProvider,
+    MockTtsProvider,
+    JarvisVoiceService,
   ],
 })
 export class AiAppModule {}

@@ -20,10 +20,10 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('ai.gemini.apiKey', '');
-    this.model = this.configService.get<string>('ai.gemini.model', 'gemini-3.8-flash');
+    this.model = this.configService.get<string>('ai.gemini.model', 'gemini-3.5-flash');
     this.embeddingModel = this.configService.get<string>(
       'ai.gemini.embeddingModel',
-      'text-embedding-004',
+      'gemini-embedding-001',
     );
 
     if (apiKey) {
@@ -129,11 +129,27 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
       config.tools = [{ functionDeclarations }];
     }
 
-    const streamResponse = await client.models.generateContentStream({
-      model: this.model,
-      contents,
-      config,
-    });
+    let streamResponse;
+    try {
+      streamResponse = await client.models.generateContentStream({
+        model: this.model,
+        contents,
+        config,
+      });
+    } catch (err) {
+      if (this.model !== 'gemini-3.5-flash') {
+        this.logger.warn(
+          `[GeminiProvider] ${this.model} 호출 실패로 gemini-3.5-flash로 자동 폴백합니다: ${err}`,
+        );
+        streamResponse = await client.models.generateContentStream({
+          model: 'gemini-3.5-flash',
+          contents,
+          config,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     for await (const chunk of streamResponse) {
       const text = chunk.text;
@@ -151,6 +167,9 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     const res = await client.models.embedContent({
       model: this.embeddingModel,
       contents: text,
+      config: {
+        outputDimensionality: 768,
+      },
     });
 
     const values =
