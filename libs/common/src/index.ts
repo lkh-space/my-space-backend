@@ -6,3 +6,4 @@ export * from './pipes/zod-validation.pipe.js';
 export * from './logger/logger.config.js';
 export * from './logger/sensitive-data.masker.js';
 export * from './health/index.js';
+export * from './version/index.js';

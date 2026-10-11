@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { VersionService } from '@app/common';
 import { AiAppModule } from './ai-app.module.js';
 
 async function bootstrap() {
@@ -14,7 +15,7 @@ async function bootstrap() {
     .setDescription(
       'J.A.R.V.I.S. Neural Core 실시간 음성 비서, Qdrant 시맨틱 검색, SSE 스트리밍 API',
     )
-    .setVersion('0.0.1')
+    .setVersion('0.1.0')
     .addTag('J.A.R.V.I.S. Voice & Neural Core', '실시간 음성/텍스트 SSE 스트리밍, 발화 인터럽트 및 오디오 서빙')
     .addTag('J.A.R.V.I.S. Neural Sessions', '신경망 스트림 세션 라이프사이클 관리')
     .addTag('AI Chat', 'Gemini / Ollama 실시간 스트리밍 대화 및 Tool 연동')
@@ -39,7 +40,14 @@ async function bootstrap() {
       ? Number(process.env.PORT)
       : 3001;
   await app.listen(port);
-  pinoLogger.log(`[AI Workspace] Application is running on port ${port} (Docs: http://localhost:${port}/docs)`);
+
+  const versionService = app.get(VersionService);
+  const versionInfo = versionService.getVersionInfo();
+
+  pinoLogger.log(
+    `[AI Workspace] Application is running on port ${port} [name=${versionInfo.name}, version=${versionInfo.version}, branch=${versionInfo.gitBranch}, commit=${versionInfo.gitCommit}, env=${versionInfo.env}] (Docs: http://localhost:${port}/docs)`,
+    'Bootstrap',
+  );
 }
 
 bootstrap();

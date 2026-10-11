@@ -20,8 +20,7 @@ import { AppController } from '../../apps/api/src/app.controller.js';
 import { AppService } from '../../apps/api/src/app.service.js';
 import { PdfModule } from '../../apps/api/src/pdf/pdf.module.js';
 import { AuthModule } from '../../apps/api/src/auth/auth.module.js';
-import { VersionModule } from '../../apps/api/src/version/version.module.js';
-import { HealthModule } from '@app/common';
+import { HealthModule, VersionModule } from '@app/common';
 import { MarkdownModule } from '../../apps/api/src/markdown/markdown.module.js';
 import { TestService } from './test.service.js';
 
@@ -49,7 +48,7 @@ import { TestService } from './test.service.js';
     StorageModule, // Prisma, MinIO, OpenSearch, RabbitMQ, Qdrant
     PdfModule,
     AuthModule,
-    VersionModule,
+    VersionModule.register({ appName: 'api' }),
     HealthModule,
     MarkdownModule,
   ],

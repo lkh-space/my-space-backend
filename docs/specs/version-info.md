@@ -1,27 +1,27 @@
 ---
 status: implemented
 owner: Keunhyeok Lim
-last-updated: 2026-10-03
+last-updated: 2026-10-11
 ---
 
 # 애플리케이션 버전 및 빌드 메타데이터 사양서 (Version Info Specification)
 
 ## 1. 개요 (Summary)
-서비스에 배포된 애플리케이션의 버전(`package.json`), Git 브랜치명, 커밋 해시, 빌드 시각 및 런타임 환경 정보를 확인하고 검증할 수 있는 시스템 엔드포인트(`GET /version`, `GET /api/v1/version`)를 제공합니다. 향후 다중 서비스(NestJS 모노레포) 확장을 고려하여 각 애플리케이션 식별자(`name`)를 함께 제공하며 독립 모듈로 설계합니다.
+서비스에 배포된 애플리케이션의 버전(`package.json`), Git 브랜치명, 커밋 해시, 빌드 시각 및 런타임 환경 정보를 확인하고 검증할 수 있는 시스템 엔드포인트(`GET /version`, `GET /api/v1/version`)를 제공합니다. pnpm Workspaces 기반 모노레포 구조(`apps/api`, `apps/ai`)에서 각 애플리케이션의 독립 패키지명(`@my-space/api`, `@my-space/ai`)과 SemVer 버전(`0.1.0`)을 식별하며, 공통 라이브러리(`@app/common`)의 `VersionModule`을 통해 두 애플리케이션 모두에서 동일한 규격으로 제공합니다.
 
 ---
 
 ## 2. 목표 및 제외 대상 (Goals / Non-goals)
 
 ### 목표 (Goals)
-* **애플리케이션 메타데이터 식별**: `package.json`의 `name` 및 `version`을 런타임에 안전하게 로드하고 제공
+* **애플리케이션 메타데이터 식별**: 각 앱의 `package.json`의 `name` 및 `version`을 런타임에 안전하게 로드하고 제공
 * **Git 형상 추적**: 배포된 코드의 Git 브랜치(`gitBranch`) 및 커밋 해시(`gitCommit`) 노출
 * **하이브리드 Git 정보 수집**:
   * **프로덕션(Docker 배포)**: GitHub Actions 빌드 시점의 `build-arg`로 주입받은 환경변수(`GIT_COMMIT`, `GIT_BRANCH`, `BUILD_TIME`) 활용
   * **로컬 개발 환경 (`IS_LOCAL=true`)**: 로컬 `.git` 디렉토리로부터 `git rev-parse` 명령을 실행하여 실시간 브랜치 및 커밋 해시 자동 취득
 * **이중 라우트 지원**: 쿠버네티스/인프라 및 간이 호출용 `/version`과 API 게이트웨이 표준 규격 `/api/v1/version` 동시 매핑
 * **부팅 시점 로깅**: 애플리케이션 기동 시 버전 및 커밋 정보를 Pino 로거로 출력하여 Loki 및 콘솔에서 즉시 확인 가능하도록 지원
-* **모노레포 대비 모듈화**: `VersionModule`을 독립 구성하여 향후 `apps/` 및 `libs/`로 쉽게 이전 가능한 구조 확립
+* **공통 모듈화 (`@app/common`)**: `VersionModule`을 `@app/common` 라이브러리로 구성하여 `api`와 `ai` 양쪽 애플리케이션에서 일관되게 임포트 및 재사용
 
 ### 제외 대상 (Non-goals)
 * 외부 의존성(DB, Redis 등) 연결 상태를 점검하는 심층 헬스체크(Deep Healthcheck) (추후 `terminus` 모듈 등으로 별도 분리)
@@ -42,8 +42,8 @@ last-updated: 2026-10-03
 ## 4. 비즈니스 규칙 (Business Rules)
 
 * **`BR-V01` (애플리케이션 메타데이터 로드)**:
-  - `name`: 환경변수 `APP_NAME`이 지정되어 있으면 우선 적용하고, 미지정 시 `package.json`의 `name` 필드를 사용한다. (기본값: `'my-space-backend'`)
-  - `version`: 환경변수 `APP_VERSION`이 지정되어 있으면 우선 적용하고, 미지정 시 `package.json`의 `version` 필드를 사용한다. (기본값: `'0.0.1'`)
+  - `name`: 환경변수 `APP_NAME`이 지정되어 있으면 우선 적용하고, 미지정 시 해당 앱(`apps/<appName>/package.json` 또는 현재 작업경로)의 `package.json`의 `name` 필드를 사용한다. (기본값: `@my-space/<appName>`)
+  - `version`: 환경변수 `APP_VERSION`이 지정되어 있으면 우선 적용하고, 미지정 시 해당 앱의 `package.json`의 `version` 필드를 사용한다. (기본값: `'0.1.0'`)
 * **`BR-V02` (Git 커밋 및 브랜치 취득 우선순위)**:
   - 1순위: 환경변수 `GIT_COMMIT`, `GIT_BRANCH`가 존재하면 해당 값을 사용한다.
   - 2순위: 환경변수가 없고 로컬 개발 환경(`IS_LOCAL=true` 또는 `NODE_ENV !== 'production'`)인 경우, `git rev-parse --abbrev-ref HEAD` 및 `git rev-parse --short HEAD` 명령으로 실시간 조회한다.

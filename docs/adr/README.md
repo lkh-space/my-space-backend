@@ -31,3 +31,4 @@
 | :--- | :--- | :--- |
 | [ADR-0001](./0001-nest-cli-monorepo-ai-service-separation.md) | Nest CLI 표준 모노레포 구조 채택 및 AI 로직 서버(apps/ai) 독립 분리 | accepted |
 | [ADR-0002](./0002-jarvis-neural-voice-assistant-pipeline-architecture.md) | J.A.R.V.I.S. Neural Core 음성 비서 파이프라인 및 실시간 텔레메트리 스트리밍 아키텍처 | accepted |
+| [ADR-0003](./0003-pnpm-workspaces-multi-package-versioning.md) | pnpm Workspaces 기반 앱별 독립 패키지 및 0.1.0 버전 관리 체계 도입 | accepted |

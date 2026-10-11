@@ -21,8 +21,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PdfModule } from './pdf/pdf.module.js';
 import { AuthModule } from './auth/auth.module.js';
-import { VersionModule } from './version/version.module.js';
-import { HealthModule } from '@app/common';
+import { HealthModule, VersionModule } from '@app/common';
 import { StorageModule } from '@app/storage/storage.module.js';
 import { MarkdownModule } from './markdown/markdown.module.js';
 
@@ -66,7 +65,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     PdfModule,
     AuthModule,
-    VersionModule,
+    VersionModule.register({ appName: 'api' }),
     HealthModule,
     MarkdownModule,
   ],

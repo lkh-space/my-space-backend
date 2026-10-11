@@ -21,13 +21,13 @@ export class VersionResponseDto {
 
   @ApiProperty({
     description: '애플리케이션 명칭',
-    example: 'my-space-backend',
+    example: '@my-space/api',
   })
   name: string;
 
   @ApiProperty({
     description: '애플리케이션 버전 (SemVer)',
-    example: '0.0.1',
+    example: '0.1.0',
   })
   version: string;
 
@@ -45,7 +45,7 @@ export class VersionResponseDto {
 
   @ApiProperty({
     description: '빌드 일시 (ISO 8601)',
-    example: '2026-10-03T16:45:00.000Z',
+    example: '2026-10-11T16:30:00.000Z',
   })
   buildTime: string;
 

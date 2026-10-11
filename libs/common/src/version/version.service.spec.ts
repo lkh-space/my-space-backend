@@ -6,7 +6,7 @@ describe('VersionService', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    // 환경변수 초기화
+    // given: 환경변수 초기화
     process.env = { ...originalEnv };
   });
 
@@ -38,6 +38,34 @@ describe('VersionService', () => {
     expect(info.env).toBe('production');
   });
 
+  it('appName 옵션이 주어지면 해당 앱의 package.json 정보를 읽어와야 한다', () => {
+    // given
+    delete process.env.APP_NAME;
+    delete process.env.APP_VERSION;
+    service = new VersionService({ appName: 'api' });
+
+    // when
+    const info = service.getVersionInfo();
+
+    // then
+    expect(info.name).toBe('@my-space/api');
+    expect(info.version).toBe('0.1.0');
+  });
+
+  it('ai 앱에 대한 옵션이 주어지면 @my-space/ai와 0.1.0을 읽어와야 한다', () => {
+    // given
+    delete process.env.APP_NAME;
+    delete process.env.APP_VERSION;
+    service = new VersionService({ appName: 'ai' });
+
+    // when
+    const info = service.getVersionInfo();
+
+    // then
+    expect(info.name).toBe('@my-space/ai');
+    expect(info.version).toBe('0.1.0');
+  });
+
   it('로컬 환경(IS_LOCAL=true)에서 환경변수가 없으면 Git CLI를 통해 실시간 형상 정보를 가져와야 한다', () => {
     // given
     delete process.env.GIT_BRANCH;
@@ -45,15 +73,14 @@ describe('VersionService', () => {
     process.env.IS_LOCAL = 'true';
     delete process.env.NODE_ENV;
 
-    service = new VersionService();
+    service = new VersionService({ appName: 'api' });
 
     // when
     const info = service.getVersionInfo();
 
     // then
-    expect(info.name).toBe('my-space-backend');
-    expect(info.version).toBeDefined();
-    // 로컬 git 저장소가 있으므로 브랜치와 해시가 조회되거나, 최소한 문자열이어야 함
+    expect(info.name).toBe('@my-space/api');
+    expect(info.version).toBe('0.1.0');
     expect(info.gitBranch).not.toBe('');
     expect(info.gitCommit).not.toBe('');
     expect(info.env).toBe('local');
@@ -67,7 +94,7 @@ describe('VersionService', () => {
     delete process.env.IS_LOCAL;
     process.env.NODE_ENV = 'production';
 
-    service = new VersionService();
+    service = new VersionService({ appName: 'api' });
 
     // when
     const info = service.getVersionInfo();
@@ -81,7 +108,7 @@ describe('VersionService', () => {
   it('getVersionInfo를 여러 번 호출해도 인메모리 캐시를 통해 동일한 객체를 반환해야 한다', () => {
     // given
     process.env.GIT_COMMIT = 'test-sha';
-    service = new VersionService();
+    service = new VersionService({ appName: 'api' });
 
     // when
     const firstCall = service.getVersionInfo();
