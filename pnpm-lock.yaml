@@ -312,6 +312,16 @@ importers:
         specifier: ^3.0.0
         version: 3.0.0
 
+  apps/ai: {}
+
+  apps/api: {}
+
+  libs/common: {}
+
+  libs/config: {}
+
+  libs/storage: {}
+
 packages:
 
   '@angular-devkit/core@22.1.8':
