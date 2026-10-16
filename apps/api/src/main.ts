@@ -43,14 +43,38 @@ async function bootstrap() {
 
   // CORS 설정
   const defaultOrigins = [
-    'https://my-space.homelab.local',
     'http://localhost:5173',
     'http://localhost:3000',
+    'http://localhost:3001',
   ];
-  const envCorsOrigins = configService.get<string[]>('app.corsOrigins') ?? [];
-  const allowedOrigins = Array.from(
-    new Set([...defaultOrigins, ...envCorsOrigins]),
-  );
+
+  const rawCorsOrigins =
+    configService.get<string>('CORS_ORIGINS') ??
+    configService.get<string>('CORS_ORIGIN');
+
+  const configuredOrigins = rawCorsOrigins
+    ? rawCorsOrigins
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0)
+    : (configService.get<string[]>('app.corsOrigins') ?? []);
+
+  const isProduction =
+    configService.get<string>('app.nodeEnv') === 'production' ||
+    process.env.NODE_ENV === 'production';
+
+  let allowedOrigins: string[];
+  if (configuredOrigins.length > 0) {
+    allowedOrigins = Array.from(new Set(configuredOrigins));
+  } else if (!isProduction) {
+    allowedOrigins = defaultOrigins;
+  } else {
+    allowedOrigins = [];
+    logger.warn(
+      '운영 환경(NODE_ENV=production)에서 CORS_ORIGINS 환경변수가 설정되지 않아 교차 출처(CORS) 요청이 모두 차단됩니다.',
+      'Bootstrap',
+    );
+  }
 
   app.enableCors({
     origin: allowedOrigins,
