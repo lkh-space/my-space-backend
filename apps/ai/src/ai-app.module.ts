@@ -1,4 +1,4 @@
-import { HealthModule, VersionModule } from '@app/common';
+import { HealthModule, VersionModule, CoreHttpModule } from '@app/common';
 import { createLoggerConfig } from '@app/common/logger/logger.config.js';
 import {
   aiConfig,
@@ -38,6 +38,7 @@ import { VoiceController } from './voice/voice.controller.js';
 
 @Module({
   imports: [
+    CoreHttpModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.ai', '.env'],

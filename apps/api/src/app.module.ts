@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
 import { LoggerModule } from 'nestjs-pino';
@@ -14,14 +13,11 @@ import {
   validateEnv,
 } from '@app/config/index.js';
 import { createLoggerConfig } from '@app/common/logger/logger.config.js';
-import { AllExceptionsFilter } from '@app/common/filters/all-exceptions.filter.js';
-import { AuditLogInterceptor } from '@app/common/interceptors/audit-log.interceptor.js';
-import { ZodValidationPipe } from '@app/common/pipes/zod-validation.pipe.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PdfModule } from './pdf/pdf.module.js';
 import { AuthModule } from './auth/auth.module.js';
-import { HealthModule, VersionModule } from '@app/common';
+import { HealthModule, VersionModule, CoreHttpModule } from '@app/common';
 import { StorageModule } from '@app/storage/storage.module.js';
 import { MarkdownModule } from './markdown/markdown.module.js';
 
@@ -29,6 +25,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
   imports: [
+    CoreHttpModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.api', '.env'],
@@ -70,20 +67,6 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     MarkdownModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    {
-      provide: APP_FILTER,
-      useClass: AllExceptionsFilter,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditLogInterceptor,
-    },
-    {
-      provide: APP_PIPE,
-      useClass: ZodValidationPipe,
-    },
-  ],
+  providers: [AppService],
 })
 export class AppModule {}

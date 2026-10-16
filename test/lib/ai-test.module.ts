@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import {
@@ -12,10 +11,7 @@ import {
   aiConfig,
   validateEnv,
 } from '@app/config/index.js';
-import { AllExceptionsFilter } from '@app/common/filters/all-exceptions.filter.js';
-import { AuditLogInterceptor } from '@app/common/interceptors/audit-log.interceptor.js';
-import { ZodValidationPipe } from '@app/common/pipes/zod-validation.pipe.js';
-import { HealthModule } from '@app/common';
+import { HealthModule, CoreHttpModule } from '@app/common';
 import { StorageModule } from '@app/storage/storage.module.js';
 
 import { AiSearchController } from '../../apps/ai/src/search/ai-search.controller.js';
@@ -35,6 +31,7 @@ import { TestService } from './test.service.js';
 
 @Module({
   imports: [
+    CoreHttpModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.ai', '.env'],
@@ -71,18 +68,6 @@ import { TestService } from './test.service.js';
       useExisting: FakeProviderFactory,
     },
     TestService,
-    {
-      provide: APP_FILTER,
-      useClass: AllExceptionsFilter,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditLogInterceptor,
-    },
-    {
-      provide: APP_PIPE,
-      useClass: ZodValidationPipe,
-    },
   ],
   exports: [
     TestService,

@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import {
@@ -12,20 +11,18 @@ import {
   aiConfig,
   validateEnv,
 } from '@app/config/index.js';
-import { AllExceptionsFilter } from '@app/common/filters/all-exceptions.filter.js';
-import { AuditLogInterceptor } from '@app/common/interceptors/audit-log.interceptor.js';
-import { ZodValidationPipe } from '@app/common/pipes/zod-validation.pipe.js';
 import { StorageModule } from '@app/storage/storage.module.js';
 import { AppController } from '../../apps/api/src/app.controller.js';
 import { AppService } from '../../apps/api/src/app.service.js';
 import { PdfModule } from '../../apps/api/src/pdf/pdf.module.js';
 import { AuthModule } from '../../apps/api/src/auth/auth.module.js';
-import { HealthModule, VersionModule } from '@app/common';
+import { HealthModule, VersionModule, CoreHttpModule } from '@app/common';
 import { MarkdownModule } from '../../apps/api/src/markdown/markdown.module.js';
 import { TestService } from './test.service.js';
 
 @Module({
   imports: [
+    CoreHttpModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.api', '.env'],
@@ -56,18 +53,6 @@ import { TestService } from './test.service.js';
   providers: [
     AppService,
     TestService,
-    {
-      provide: APP_FILTER,
-      useClass: AllExceptionsFilter,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditLogInterceptor,
-    },
-    {
-      provide: APP_PIPE,
-      useClass: ZodValidationPipe,
-    },
   ],
   exports: [TestService],
 })

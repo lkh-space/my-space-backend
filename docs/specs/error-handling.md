@@ -40,6 +40,7 @@ NestJS 프레임워크 내장 `HttpException`에 대한 의존성을 제거하�
   - 향후 gRPC, GraphQL 등 다른 프로토콜 도입 시 도메인 계층 수정 없이 전송 계층 전용 매핑 어댑터만 확장한다.
 * **`BR-E04` (보안 마스킹)**: 외부 서버(`IS_LOCAL=false`) 환경에서는 응답 본문에서 `stack` 정보를 원천 제외해야 한다. 로컬 개발 환경(`IS_LOCAL=true`)에서만 디버깅용 `stack`을 포함한다.
 * **`BR-E05` (에러 로깅 일원화 및 상태 필터링)**: 예외 필터로 인입된 모든 예외(4xx, 5xx)는 예외 없이 `logger.error`로 기록한다. 단, 로그 페이로드에 `status`와 `statusCode` 필드를 명시하여 Loki/Grafana 모니터링 환경에서 500 이상 서버 장애를 즉시 선별 쿼리할 수 있도록 한다.
+* **`BR-E06` (공통 전역 HTTP 모듈화 및 구성 드리프트 방지)**: 모든 HTTP 애플리케이션(`apps/api`, `apps/ai`)은 전역 예외 필터(`AllExceptionsFilter`), 감사 로그 인터셉터(`AuditLogInterceptor`), 입력 검증 파이프(`ZodValidationPipe`)를 제공하는 `CoreHttpModule`(`libs/common`)을 필수로 임포트하여 애플리케이션 간 보안 및 에러 처리 규격의 일관성을 유지한다.
 
 ## 5. 인터페이스 및 클래스 설계 (Interface & Class Design)
 
