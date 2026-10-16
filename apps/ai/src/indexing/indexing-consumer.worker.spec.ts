@@ -4,8 +4,9 @@ import { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { ProviderFactory } from '../providers/provider.factory.js';
+import { generateDeterministicChunkId } from '../utils/uuid-v5.js';
 
-describe('IndexingConsumerWorker (인덱싱 워커 에러 핸들링 및 소비 단위 테스트)', () => {
+describe('IndexingConsumerWorker (인덱싱 워커 H-4 멱등성 및 원자적 색인 단위 테스트)', () => {
   let worker: IndexingConsumerWorker;
   let rabbitmqService: RabbitmqService;
   let qdrantService: QdrantService;
@@ -21,6 +22,8 @@ describe('IndexingConsumerWorker (인덱싱 워커 에러 핸들링 및 소비 �
 
     qdrantService = {
       deletePointsByDocument: vi.fn().mockResolvedValue(undefined),
+      deleteOldVersionsByDocument: vi.fn().mockResolvedValue(undefined),
+      getLatestVersionForDocument: vi.fn().mockResolvedValue(null),
       upsertPoints: vi.fn().mockResolvedValue(undefined),
     } as unknown as QdrantService;
 
@@ -31,6 +34,9 @@ describe('IndexingConsumerWorker (인덱싱 워커 에러 핸들링 및 소비 �
 
     mockEmbeddingProvider = {
       embedText: vi.fn().mockResolvedValue(Array.from({ length: 768 }, () => 0.1)),
+      embedBatch: vi.fn().mockImplementation(async (texts: string[]) => {
+        return texts.map(() => Array.from({ length: 768 }, () => 0.1));
+      }),
     };
 
     providerFactory = {
@@ -58,35 +64,113 @@ describe('IndexingConsumerWorker (인덱싱 워커 에러 핸들링 및 소비 �
     });
   });
 
-  describe('handleMessage - INDEX 이벤트', () => {
-    it('정상적인 인덱싱 메시지 처리 시 MinIO에서 원문을 로드하여 Qdrant에 저장해야 한다', async () => {
+  describe('handleMessage - INDEX 이벤트 (H-4 멱등성 및 Zero-downtime 검증)', () => {
+    it('정상 인덱싱 시 결정적 UUID로 Zero-downtime Upsert를 수행하고 구버전을 삭제해야 한다', async () => {
       // given
-      const rawMarkdown = '# 테스트 제목\n\n본문 내용입니다.';
+      const rawMarkdown = '# 섹션 1\n내용 1\n\n## 섹션 2\n내용 2';
       vi.mocked(minioService.getObjectAsString).mockResolvedValueOnce(rawMarkdown);
 
       const message = {
         type: 'INDEX' as const,
         documentId: 'doc-1',
         ownerId: 'user-admin',
-        version: 1,
-        title: '테스트 제목',
+        version: 2,
+        title: '테스트 문서',
         tags: ['test'],
+        timestamp: new Date().toISOString(),
+      };
+
+      const callOrder: string[] = [];
+      vi.mocked(qdrantService.upsertPoints).mockImplementation(async () => {
+        callOrder.push('upsertPoints');
+      });
+      vi.mocked(qdrantService.deleteOldVersionsByDocument).mockImplementation(async () => {
+        callOrder.push('deleteOldVersionsByDocument');
+      });
+
+      // when
+      await worker.handleMessage(message);
+
+      // then
+      // 1. MinIO 로드 및 배치 임베딩 호출 확인
+      expect(minioService.getObjectAsString).toHaveBeenCalledWith(
+        'my-space-markdown',
+        'docs/user-admin/doc-1/current.md',
+      );
+      expect(mockEmbeddingProvider.embedBatch).toHaveBeenCalled();
+
+      // 2. 결정적 UUID가 포인트 ID로 지정되었는지 확인
+      const expectedFirstChunkId = generateDeterministicChunkId('doc-1', 0);
+      expect(qdrantService.upsertPoints).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: expectedFirstChunkId,
+            payload: expect.objectContaining({
+              version: 2,
+              documentId: 'doc-1',
+            }),
+          }),
+        ]),
+      );
+
+      // 3. 순서 검증: 검색 공백 방지를 위해 upsertPoints가 deleteOldVersionsByDocument보다 먼저 실행되어야 함
+      expect(callOrder).toEqual(['upsertPoints', 'deleteOldVersionsByDocument']);
+      expect(qdrantService.deleteOldVersionsByDocument).toHaveBeenCalledWith(
+        'user-admin',
+        'doc-1',
+        2,
+      );
+    });
+
+    it('이미 더 최신 버전이 색인되어 있으면 구버전 이벤트를 건너뛰어야 한다 (Out-of-order 방어)', async () => {
+      // given: 이미 v3이 Qdrant에 색인되어 있음
+      vi.mocked(qdrantService.getLatestVersionForDocument).mockResolvedValueOnce(3);
+
+      const message = {
+        type: 'INDEX' as const,
+        documentId: 'doc-1',
+        ownerId: 'user-admin',
+        version: 2, // 지연되어 늦게 도착한 구버전
+        title: '구버전 문서',
         timestamp: new Date().toISOString(),
       };
 
       // when
       await worker.handleMessage(message);
 
-      // then
-      expect(minioService.getObjectAsString).toHaveBeenCalledWith(
-        'my-space-markdown',
-        'docs/user-admin/doc-1/current.md',
-      );
-      expect(qdrantService.deletePointsByDocument).toHaveBeenCalledWith('user-admin', 'doc-1');
-      expect(qdrantService.upsertPoints).toHaveBeenCalled();
+      // then: MinIO 및 Qdrant 업서트를 일절 호출하지 않고 무시해야 함
+      expect(minioService.getObjectAsString).not.toHaveBeenCalled();
+      expect(qdrantService.upsertPoints).not.toHaveBeenCalled();
+      expect(qdrantService.deleteOldVersionsByDocument).not.toHaveBeenCalled();
     });
 
-    it('MinIO 원문 로드 실패 시 에러를 삼키지 않고 throw하여 상위 재시도/DLQ 메커니즘에 전달해야 한다 (H-3)', async () => {
+    it('배치 임베딩 실패 시 예외를 throw하여 부분 인덱스 생성을 방지해야 한다 (원자성 All-or-Nothing)', async () => {
+      // given
+      const rawMarkdown = '# 섹션 1\n내용';
+      vi.mocked(minioService.getObjectAsString).mockResolvedValueOnce(rawMarkdown);
+      vi.mocked(mockEmbeddingProvider.embedBatch).mockRejectedValueOnce(
+        new Error('Embedding API rate limit'),
+      );
+
+      const message = {
+        type: 'INDEX' as const,
+        documentId: 'doc-fail',
+        ownerId: 'user-admin',
+        version: 1,
+        title: '실패할 문서',
+        timestamp: new Date().toISOString(),
+      };
+
+      // when & then
+      await expect(worker.handleMessage(message)).rejects.toThrow(
+        'Embedding API rate limit',
+      );
+      // 실패 시 어떠한 Qdrant 업서트나 삭제도 일어나지 않아야 함
+      expect(qdrantService.upsertPoints).not.toHaveBeenCalled();
+      expect(qdrantService.deleteOldVersionsByDocument).not.toHaveBeenCalled();
+    });
+
+    it('MinIO 원문 로드 실패 시 에러를 throw하여 상위 재시도 메커니즘에 전달해야 한다 (H-3/H-4)', async () => {
       // given
       vi.mocked(minioService.getObjectAsString).mockRejectedValueOnce(
         new Error('S3 Connection timeout'),
@@ -105,13 +189,12 @@ describe('IndexingConsumerWorker (인덱싱 워커 에러 핸들링 및 소비 �
       await expect(worker.handleMessage(message)).rejects.toThrow(
         'MinIO 원문 파일 조회 실패',
       );
-      // 저장되지 않았으므로 Qdrant 호출이 발생하지 않아야 함
       expect(qdrantService.upsertPoints).not.toHaveBeenCalled();
     });
   });
 
   describe('handleMessage - DELETE 이벤트', () => {
-    it('DELETE 메시지 수신 시 Qdrant에서 포인트를 삭제해야 한다', async () => {
+    it('DELETE 메시지 수신 시 Qdrant에서 해당 문서의 모든 포인트를 삭제해야 한다', async () => {
       // given
       const message = {
         type: 'DELETE' as const,

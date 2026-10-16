@@ -1,10 +1,10 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { ProviderFactory } from '../providers/provider.factory.js';
 import { MarkdownChunker } from '../utils/markdown-chunker.js';
+import { generateDeterministicChunkId } from '../utils/uuid-v5.js';
 
 interface IndexEvent {
   type: 'INDEX';
@@ -72,7 +72,20 @@ export class IndexingConsumerWorker implements OnModuleInit {
         `[IndexingWorker] 문서 벡터 색인 생성/갱신 처리 (docId=${message.documentId}, owner=${message.ownerId}, ver=${message.version})`,
       );
 
-      // 1. MinIO에서 최신 원문 다운로드
+      // 1. 오래된 이벤트(Out-of-order 메시지) 덮어쓰기 방어
+      const latestIndexedVersion =
+        await this.qdrantService.getLatestVersionForDocument(
+          message.ownerId,
+          message.documentId,
+        );
+      if (latestIndexedVersion !== null && latestIndexedVersion > message.version) {
+        this.logger.warn(
+          `[IndexingWorker] 이미 더 최신 버전(v${latestIndexedVersion})이 색인되어 있어 구버전(v${message.version}) 이벤트를 무시합니다. (docId=${message.documentId})`,
+        );
+        return;
+      }
+
+      // 2. MinIO에서 최신 원문 다운로드
       const objectKey = `docs/${message.ownerId}/${message.documentId}/current.md`;
       let rawMarkdown = '';
       try {
@@ -87,71 +100,54 @@ export class IndexingConsumerWorker implements OnModuleInit {
         throw new Error(`MinIO 원문 파일 조회 실패 (${objectKey}): ${errorMsg}`);
       }
 
-      // 2. 마크다운 청킹
+      // 3. 마크다운 청킹
       const chunks = MarkdownChunker.chunk(rawMarkdown);
       if (chunks.length === 0) {
         this.logger.log(`[IndexingWorker] 청킹 결과 빈 내용 (docId=${message.documentId})`);
         return;
       }
 
-      // 3. 임베딩 생성 (Gemini 또는 Ollama)
+      // 4. 원자적 배치 임베딩 (All-or-Nothing: 부분 인덱스 방지)
       const embeddingProvider = this.providerFactory.getEmbeddingProvider();
-      const points: Array<{
-        id: string;
-        vector: number[];
-        payload: {
-          ownerId: string;
-          documentId: string;
-          version: number;
-          chunkIndex: number;
-          title: string;
-          heading: string;
-          content: string;
-          tags?: string[];
-          folderId?: string | null;
-        };
-      }> = [];
-
-      for (const chunk of chunks) {
-        try {
-          const vector = await embeddingProvider.embedText(
-            `제목: ${message.title}\n헤딩: ${chunk.heading}\n\n${chunk.content}`,
-          );
-
-          points.push({
-            id: randomUUID(),
-            vector,
-            payload: {
-              ownerId: message.ownerId,
-              documentId: message.documentId,
-              version: message.version,
-              chunkIndex: chunk.chunkIndex,
-              title: message.title,
-              heading: chunk.heading,
-              content: chunk.content,
-              tags: message.tags,
-              folderId: message.folderId,
-            },
-          });
-        } catch (embedErr: unknown) {
-          const errorMsg =
-            embedErr instanceof Error ? embedErr.message : String(embedErr);
-          this.logger.error(
-            `청크 임베딩 생성 실패 (chunkIndex=${chunk.chunkIndex}): ${errorMsg}`,
-          );
-        }
-      }
-
-      // 4. Qdrant 기존 벡터 삭제 후 신규 청크 Upsert
-      await this.qdrantService.deletePointsByDocument(
-        message.ownerId,
-        message.documentId,
+      const embeddingTexts = chunks.map(
+        (chunk) =>
+          `제목: ${message.title}\n헤딩: ${chunk.heading}\n\n${chunk.content}`,
       );
+
+      // 하나라도 실패하면 throw되어 H-3 RabbitMQ Retry/DLQ로 위임
+      const vectors = await embeddingProvider.embedBatch(embeddingTexts);
+
+      // 5. 결정적 멱등 포인트 ID 생성 (uuid-v5)
+      const points = chunks.map((chunk, index) => ({
+        id: generateDeterministicChunkId(message.documentId, chunk.chunkIndex),
+        vector: vectors[index],
+        payload: {
+          ownerId: message.ownerId,
+          documentId: message.documentId,
+          version: message.version,
+          chunkIndex: chunk.chunkIndex,
+          title: message.title,
+          heading: chunk.heading,
+          content: chunk.content,
+          tags: message.tags,
+          folderId: message.folderId,
+        },
+      }));
+
+      // 6. Zero-Downtime Upsert: 업서트를 먼저 수행하여 검색 공백 방지
       await this.qdrantService.upsertPoints(points);
 
+      // 7. 업서트 성공 후, 이전 구버전(ver < currentVersion) 잔여 포인트만 안전하게 정리
+      await this.qdrantService.deleteOldVersionsByDocument(
+        message.ownerId,
+        message.documentId,
+        message.version,
+      );
+
       this.logger.log(
-        `[IndexingWorker] Qdrant 벡터 색인 완료 [docId=${message.documentId}, 청크=${points.length}개]`,
+        `[IndexingWorker] Qdrant 벡터 색인 완료 (Zero-downtime) [docId=${message.documentId}, 청크=${points.length}개, ver=${message.version}]`,
       );
     }
   }
 }
+

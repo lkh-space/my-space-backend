@@ -123,6 +123,32 @@ export class FakeQdrantService {
     );
   }
 
+  async deleteOldVersionsByDocument(
+    ownerId: string,
+    documentId: string,
+    currentVersion: number,
+  ): Promise<void> {
+    this.points = this.points.filter(
+      (p) =>
+        !(
+          p.payload.ownerId === ownerId &&
+          p.payload.documentId === documentId &&
+          (p.payload.version ?? 0) < currentVersion
+        ),
+    );
+  }
+
+  async getLatestVersionForDocument(
+    ownerId: string,
+    documentId: string,
+  ): Promise<number | null> {
+    const matched = this.points.filter(
+      (p) => p.payload.ownerId === ownerId && p.payload.documentId === documentId,
+    );
+    if (matched.length === 0) return null;
+    return Math.max(...matched.map((p) => Number(p.payload.version ?? 0)));
+  }
+
   async searchPoints(
     ownerId: string,
     _vector: number[],

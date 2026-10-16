@@ -131,6 +131,79 @@ export class QdrantService implements OnModuleInit {
   }
 
   /**
+   * 특정 문서의 구버전(version < currentVersion) 포인트만 선택적으로 삭제
+   * (Zero-downtime Upsert 후 이전 잔여 청크 정리용)
+   */
+  async deleteOldVersionsByDocument(
+    ownerId: string,
+    documentId: string,
+    currentVersion: number,
+  ): Promise<void> {
+    try {
+      await this.client.delete(this.collectionName, {
+        wait: true,
+        filter: {
+          must: [
+            { key: 'ownerId', match: { value: ownerId } },
+            { key: 'documentId', match: { value: documentId } },
+            { key: 'version', range: { lt: currentVersion } },
+          ],
+        },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `구버전 포인트 삭제 중 에러 발생 (docId=${documentId}, ver < ${currentVersion}): ${message}`,
+      );
+    }
+  }
+
+  /**
+   * 특정 문서의 현재 색인된 최고 버전 조회 (Out-of-order 늦은 이벤트 덮어쓰기 방어용)
+   */
+  async getLatestVersionForDocument(
+    ownerId: string,
+    documentId: string,
+  ): Promise<number | null> {
+    try {
+      const response = await this.client.scroll(this.collectionName, {
+        filter: {
+          must: [
+            { key: 'ownerId', match: { value: ownerId } },
+            { key: 'documentId', match: { value: documentId } },
+          ],
+        },
+        limit: 10,
+        with_payload: true,
+        with_vector: false,
+      });
+
+      const points = response.points || [];
+      if (points.length === 0) {
+        return null;
+      }
+
+      let maxVersion: number | null = null;
+      for (const p of points) {
+        const payload = p.payload as QdrantPointPayload | undefined;
+        if (payload?.version !== undefined && payload.version !== null) {
+          const ver = Number(payload.version);
+          if (maxVersion === null || ver > maxVersion) {
+            maxVersion = ver;
+          }
+        }
+      }
+      return maxVersion;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `문서 버전 조회 중 에러 발생 (docId=${documentId}): ${message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * ownerId 격리 필터 적용 시맨틱 검색
    */
   async searchPoints(
