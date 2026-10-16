@@ -1,7 +1,7 @@
 ---
 status: implemented
 owner: Keunhyeok Lim
-last-updated: 2026-09-21
+last-updated: 2026-10-16
 ---
 
 # PDF 조작 및 유틸리티 도메인 사양서 (PDF Tools Specification)
@@ -17,7 +17,7 @@ last-updated: 2026-09-21
 * **PDF 전체 페이지 분할 (Split to Pages)**: 단일 PDF의 모든 페이지를 개별 PDF로 분할한 뒤 단일 ZIP 아카이브로 압축하여 반환
 * **PDF 암호 해제 (Unlock PDF)**: 비밀번호로 보호된 PDF의 암호를 영구적으로 제거하여 암호 없는 일반 PDF로 변환 및 다운로드
 * **보호된 PDF 처리 지원**: 병합/분할 시 암호화된 PDF가 포함되어 있을 경우 비밀번호를 함께 제공하여 복호화 후 안전하게 조작 수행
-* **안전한 임시 파일 및 버퍼 수명주기 관리**: `pdf-lib` 연산은 메모리 버퍼 상에서 처리하며, `node-qpdf2`의 CLI 파일 I/O는 `try-finally` 블록을 통해 작업 직후 임시 파일을 100% 즉시 파기하여 잔여 누수 방지
+* **안전한 임시 파일 및 버퍼 수명주기 관리**: `pdf-lib` 연산은 메모리 버퍼 상에서 처리하며, `qpdf` CLI 연산은 파일 기반 출력(`withTempOutputFile`)과 stdin 비밀번호 주입(`--password-file=-`), `try-finally` 블록을 통해 바이너리 손상 및 프로세스 비밀번호 노출 없이 즉시 파기
 * **도메인 예외 및 에러 매핑**: 비밀번호 누락/불일치, 손상된 파일, 잘못된 페이지 범위 입력 시 표준 도메인 에러 반환
 
 ### 제외 대상 (Non-goals)
@@ -164,7 +164,7 @@ last-updated: 2026-09-21
 | **`pdf-lib`** | **약 180만 회** (압도적 1위) | PDF 병합, 범위/낱장 분할, 페이지 조작 완벽 | **[채택]** PDF 병합 및 분할 엔진으로 채택. 단, 암호화(RC4/AES)된 PDF의 복호화(Unlock)를 지원하지 못해 단독 사용 불가. |
 | **`pdfjs-dist`** | **약 200만 회** (압도적 1위) | PDF 파싱, 메타데이터/텍스트 읽기, 비밀번호 인증 | **[탈락]** Mozilla Firefox 내장 '읽기 전용 뷰어' 엔진으로, 암호 해제 재저장(Unlock), 파일 수정, 병합, 분할 등 '쓰기/작성' 기능이 일체 부재. |
 | **`mupdf`** | 낮음 (WASM) | 암호 해제, 병합, 렌더링 지원 | **[탈락]** AGPL-3.0 라이선스 제약 및 대용량 Wasm 번들 이슈로 제외. |
-| **`node-qpdf2`**<br>+ `qpdf` (CLI) | 약 수천 회 (Wrapper)<br>*(qpdf 본체는 OS 표준 C++)* | 암호화 여부 검사(`info`), 암호 영구 해제(`decrypt`), 신규 암호화(`encrypt`) | **[채택]** AWS Lambda Chromium 메인테이너(Sparticuz)가 관리하는 현대적 TS/Promise 래퍼. Docker 컨테이너 내 `qpdf` 바이너리 연동으로 무결성 보장. |
+| **`qpdf` (네이티브)**<br>+ `child_process.spawn` | 표준 C++ CLI 도구 | 암호화 여부 검사(`show-encryption`), 암호 영구 해제(`decrypt`), 신규 암호화(`encrypt`) | **[채택]** `node-qpdf2`의 stdout 직렬화 버그(바이너리 오염)를 배제하고, 네이티브 `spawn` + 파일 기반 I/O + stdin 비밀번호 주입으로 100% 무결성 및 보안 보장. |
 
 ### 7.3. 최종 아키텍처 및 역할 분담 (Final Architecture Decision)
 
@@ -176,15 +176,15 @@ graph TD
     Controller --> Service[PdfService]
     
     subgraph "PDF 조작 엔진 역할 분담"
-        Service -->|1. 암호화 검사 / 암호 해제| QPDF["node-qpdf2 (컨테이너 내 qpdf 바이너리)"]
+        Service -->|1. 암호화 검사 / 암호 해제| QPDF["QpdfEngine (컨테이너 내 qpdf 네이티브 spawn)"]
         Service -->|2. 페이지 병합 / 범위 분할 / 낱장 분할| PDFLIB["pdf-lib (순수 TS, 주 180만 회)"]
         Service -->|3. 낱장 분할 압축| ARCHIVER["archiver (ZIP 스트리밍)"]
     end
 ```
 
-1. **`node-qpdf2` (암호화/복호화 엔진)**:
+1. **`QpdfEngine` (암호화/복호화 엔진)**:
    - `inspect`: 암호화 여부 및 비밀번호 유효성 검증
-   - `unlock`: 비밀번호 기반 보안 핸들러 영구 제거
+   - `unlock`: 비밀번호 기반 보안 핸들러 영구 제거 (`--password-file=-` stdin 주입)
    - `merge`/`split` 시 암호화된 PDF가 인입될 경우, 선행 복호화 수행 후 `pdf-lib`으로 전달
 2. **`pdf-lib` (페이지 조작 엔진)**:
    - `merge`: 2~20개 PDF 파일의 순차적 병합
@@ -198,5 +198,5 @@ graph TD
 ## 8. 오픈 질문 및 잔여 과제 (Decisions & Open Questions)
 
 * [x] **비밀번호 기반 암호 해제 지원**: `POST /api/v1/pdf/unlock` 신설 및 병합/분할 시 `password(s)` 파라미터 연동 확정.
-* [x] **코어 엔진 라이브러리 선정**: `node-qpdf2`(암호화/복호화) + `pdf-lib`(병합/분할) 역할 분담 조합 확정. Docker 컨테이너 내 `qpdf` 바이너리 설치.
+* [x] **코어 엔진 라이브러리 선정**: 결함 있는 `node-qpdf2` 대신 네이티브 `qpdf` spawn + `pdf-lib` 역할 분담 조합 확정. Docker 컨테이너 내 `qpdf` 바이너리 설치.
 * [ ] **병합 시 passwords 전달 포맷**: `multipart/form-data`에서 파일별 비밀번호를 인덱스 배열(`passwords: ["pw1", "", "pw2"]`) 또는 JSON 문자열 중 선호하는 방식.
