@@ -38,10 +38,7 @@ export class IndexingConsumerWorker implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // RabbitMQ 연결 대기 후 Consumer 등록
-    setTimeout(() => {
-      this.startConsumer();
-    }, 2000);
+    await this.startConsumer();
   }
 
   private async startConsumer(): Promise<void> {
@@ -86,7 +83,8 @@ export class IndexingConsumerWorker implements OnModuleInit {
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         this.logger.error(`MinIO 원문 로드 실패 (${objectKey}): ${errorMsg}`);
-        return;
+        // 재시도 큐 및 DLQ 처리를 위해 에러를 상위로 전파
+        throw new Error(`MinIO 원문 파일 조회 실패 (${objectKey}): ${errorMsg}`);
       }
 
       // 2. 마크다운 청킹

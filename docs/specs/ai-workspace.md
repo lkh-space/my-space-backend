@@ -63,6 +63,11 @@ last-updated: 2026-10-06
 * **`BR-A06` (CORS 및 브라우저 교차 출처 요청 위조 방어)**:
   * AI 서버는 임의의 Origin 반사(`origin: true`)를 엄격히 금지하고, 화이트리스트(`defaultOrigins` + `app.corsOrigins`)에 등록된 신뢰 출처만 허용한다.
   * 브라우저 CORS 요청 헤더(`allowedHeaders`)에서 `Remote-*` 계열의 프록시 헤더를 원천 배제하여 외부 악성 스크립트에 의한 인증 헤더 조작 및 CSRF를 방지한다.
+* **`BR-A07` (메시지 브로커 신뢰성, 재시도 및 DLQ)**:
+  * RabbitMQ 브로커와의 연결 유실 시 지수 백오프 기반으로 자동 재연결되어야 하며, 연결 복구 시 등록된 Consumer가 자동으로 복원되어야 한다.
+  * 일시적인 인덱싱 실패(MinIO/네트워크 지연 등) 시 최대 3회까지 지연 재시도 큐(`markdown-indexing-queue.retry`)를 통해 재시도한다.
+  * 최대 재시도 초과 또는 역직렬화 불가 메시지는 즉시 Dead Letter Exchange(`markdown-indexing-queue.dlx`)를 통해 Dead Letter Queue(`markdown-indexing-queue.dlq`)로 안전하게 격리 보존되어 메시지 영구 소실을 방지한다.
+  * 인덱싱 워커는 MinIO 원문 로드 실패 등의 예외를 내부에서 삼키지 않고 브로커로 전파하여 재시도/DLQ 메커니즘을 유발해야 한다.
 
 ---
 
