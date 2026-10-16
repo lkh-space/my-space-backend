@@ -1,5 +1,5 @@
 import { Injectable, forwardRef, Inject } from '@nestjs/common';
-import matter from 'gray-matter';
+import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { DocumentService } from './document.service.js';
@@ -87,7 +87,7 @@ export class RevisionService {
         this.minioService.docsBucket,
         doc.objectKey,
       );
-      const parsed = matter(raw);
+      const parsed = safeMatter(raw);
       return new RevisionDetailDto({
         version: doc.currentVersion,
         title: doc.title,
@@ -109,7 +109,7 @@ export class RevisionService {
       this.minioService.docsBucket,
       rev.objectKey,
     );
-    const parsed = matter(raw);
+    const parsed = safeMatter(raw);
 
     return new RevisionDetailDto({
       version: rev.version,
@@ -186,7 +186,7 @@ export class RevisionService {
       this.minioService.docsBucket,
       rev.objectKey,
     );
-    const parsed = matter(raw);
+    const parsed = safeMatter(raw);
 
     // 새 리비전으로 updateDocument 수행
     return this.documentService.updateDocument(ownerId, documentId, {

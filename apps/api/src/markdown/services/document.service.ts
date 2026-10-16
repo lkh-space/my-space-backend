@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import matter from 'gray-matter';
+import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { OpenSearchService } from '@app/storage/opensearch/opensearch.service.js';
@@ -48,7 +48,7 @@ export class DocumentService {
     // Frontmatter와 본문 결합
     const frontmatter = dto.frontmatter || {};
     const content = dto.content || '';
-    const rawMarkdown = matter.stringify(content, frontmatter);
+    const rawMarkdown = safeMatter.stringify(content, frontmatter);
 
     // 태그 ID 확인/생성
     const tagNames = dto.tags || [];
@@ -215,7 +215,7 @@ export class DocumentService {
       doc.objectKey,
     );
 
-    const parsed = matter(rawMarkdown);
+    const parsed = safeMatter(rawMarkdown);
 
     return new DocumentDetailDto({
       id: doc.id,
@@ -272,7 +272,7 @@ export class DocumentService {
       this.minioService.docsBucket,
       doc.objectKey,
     );
-    const oldParsed = matter(oldRaw);
+    const oldParsed = safeMatter(oldRaw);
 
     const newContent =
       dto.content !== undefined ? dto.content : oldParsed.content;
@@ -312,7 +312,7 @@ export class DocumentService {
       });
 
       // 3. 최신 본문 MinIO 갱신
-      const newRaw = matter.stringify(newContent, newFrontmatter);
+      const newRaw = safeMatter.stringify(newContent, newFrontmatter);
       await this.minioService.putObject(
         this.minioService.docsBucket,
         doc.objectKey,
@@ -444,7 +444,7 @@ export class DocumentService {
     }
 
     const rawContent = file.buffer.toString('utf-8');
-    const parsed = matter(rawContent);
+    const parsed = safeMatter(rawContent);
 
     // 제목 결정 (Frontmatter -> 첫 번째 헤딩 -> 파일명 순)
     let title = typeof parsed.data.title === 'string' ? parsed.data.title.trim() : '';

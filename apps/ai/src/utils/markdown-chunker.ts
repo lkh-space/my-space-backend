@@ -1,4 +1,4 @@
-import matter from 'gray-matter';
+import { safeMatter } from '@app/common/markdown/safe-matter.js';
 
 export interface MarkdownChunk {
   chunkIndex: number;
@@ -15,7 +15,7 @@ export class MarkdownChunker {
    * 마크다운 텍스트를 의미론적 청크 배열로 분할
    */
   static chunk(rawMarkdown: string): MarkdownChunk[] {
-    const parsed = matter(rawMarkdown);
+    const parsed = safeMatter(rawMarkdown);
     const content = parsed.content.trim();
 
     if (!content) {

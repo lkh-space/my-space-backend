@@ -52,6 +52,7 @@ export const DOMAIN_ERROR_HTTP_MAP: Record<string, HttpStatus> = {
   DOCUMENT_NOT_FOUND: HttpStatus.NOT_FOUND,
   REVISION_NOT_FOUND: HttpStatus.NOT_FOUND,
   INVALID_ASSET_FILE: HttpStatus.BAD_REQUEST,
+  MARKDOWN_UNSAFE_FRONTMATTER: HttpStatus.BAD_REQUEST,
 
   // J.A.R.V.I.S. 음성 비서 및 신경망 세션 도메인
   AI_SESSION_NOT_FOUND: HttpStatus.NOT_FOUND,

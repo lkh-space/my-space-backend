@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import matter from 'gray-matter';
+import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
@@ -190,7 +190,7 @@ export class AiToolsService {
     });
 
     const objectKey = `docs/${ownerId}/${created.id}/current.md`;
-    const rawMarkdown = matter.stringify(content, {
+    const rawMarkdown = safeMatter.stringify(content, {
       title,
       tags: tags || ['ai-generated'],
       createdAt: new Date().toISOString(),

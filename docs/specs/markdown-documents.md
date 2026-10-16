@@ -1,7 +1,7 @@
 ---
 status: implemented
 owner: Keunhyeok Lim
-last-updated: 2026-10-05
+last-updated: 2026-10-16
 ---
 
 # 마크다운 문서 도메인 사양서 (Markdown Documents Specification)
@@ -62,6 +62,8 @@ last-updated: 2026-10-05
   - 문서 수정 시 본문(`content`) 또는 제목(`title`), Frontmatter에 변경이 발생한 경우에만 기존 버전을 `DocumentRevision` 및 MinIO `revisions/` 경로에 보존하고 `currentVersion`을 1 증가시킨다.
 * **`BR-M05` (에셋 파일 검증)**:
   - 이미지 파일은 10MB 이하이어야 하며, 허용된 MIME 타입(JPEG, PNG, GIF, WebP, SVG)과 실제 Magic bytes가 일치해야 한다 (`INVALID_ASSET_FILE`).
+* **`BR-M06` (안전한 프론트매터 파싱 및 RCE 방지)**:
+  - 마크다운 파싱 시 임의 코드 실행(eval)을 유발할 수 있는 엔진(JavaScript, CoffeeScript 등)은 엄격히 차단되어야 하며, 이를 위반하는 파일이나 문서는 즉시 거부된다 (`MARKDOWN_UNSAFE_FRONTMATTER`). 또한 파서의 전역 캐시로 인한 메모리 누수가 발생하지 않아야 한다.
 
 ---
 
@@ -101,3 +103,4 @@ last-updated: 2026-10-05
 | `DOCUMENT_NOT_FOUND` | `DocumentNotFoundException` | `404 Not Found` |
 | `REVISION_NOT_FOUND` | `RevisionNotFoundException` | `404 Not Found` |
 | `INVALID_ASSET_FILE` | `InvalidAssetException` | `400 Bad Request` |
+| `MARKDOWN_UNSAFE_FRONTMATTER` | `UnsafeFrontmatterException` | `400 Bad Request` |
