@@ -28,12 +28,30 @@ export function validateAssetFile(file?: Express.Multer.File): void {
     );
   }
 
-  // 매직 바이트 검증
+  // 매직 바이트 및 파일 무결성/보안 검증
   const buffer = file.buffer;
   if (!verifyMagicBytes(buffer, file.mimetype)) {
-    throw new InvalidAssetException('파일 내용이 실제 이미지 규격과 일치하지 않습니다.');
+    throw new InvalidAssetException(
+      file.mimetype === 'image/svg+xml'
+        ? 'SVG 파일 내용이 유효하지 않거나 위험한 스크립트/외부 엔티티가 포함되어 있습니다.'
+        : '파일 내용이 실제 이미지 규격과 일치하지 않습니다.',
+    );
   }
 }
+
+/**
+ * 위험한 SVG 내부 패턴 (XSS 및 XXE 방어)
+ */
+const DANGEROUS_SVG_PATTERNS = [
+  /<script[\s>]/i,
+  /<\/script>/i,
+  /\bon\w+\s*=/i, // onload=, onerror=, onclick=, onmouseover= 등
+  /javascript\s*:/i,
+  /data\s*:\s*text\/html/i,
+  /<foreignobject[\s>]/i,
+  /<!entity/i,
+  /<!doctype[^>]*system/i,
+];
 
 function verifyMagicBytes(buffer: Buffer, mimetype: string): boolean {
   if (mimetype === 'image/jpeg') {
@@ -62,8 +80,32 @@ function verifyMagicBytes(buffer: Buffer, mimetype: string): boolean {
     );
   }
   if (mimetype === 'image/svg+xml') {
-    const text = buffer.subarray(0, 500).toString('utf-8').trim();
-    return text.includes('<svg') || text.startsWith('<?xml');
+    return isSafeSvg(buffer);
   }
   return false;
+}
+
+/**
+ * SVG 파일의 구조 유효성 및 악성 스크립트 포함 여부 검증
+ */
+function isSafeSvg(buffer: Buffer): boolean {
+  const content = buffer.toString('utf-8').trim();
+  if (content.length === 0) {
+    return false;
+  }
+
+  // 기본 SVG 루트 태그 또는 XML 선언 존재 여부 확인
+  const hasSvgTag = content.includes('<svg') && content.includes('</svg>');
+  if (!hasSvgTag) {
+    return false;
+  }
+
+  // 위험한 스크립트, 이벤트 핸들러, 외부 엔티티 패턴 검사
+  for (const pattern of DANGEROUS_SVG_PATTERNS) {
+    if (pattern.test(content)) {
+      return false;
+    }
+  }
+
+  return true;
 }

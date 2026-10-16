@@ -9,9 +9,11 @@ import {
   UseGuards,
   Res,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { pipeline } from 'node:stream/promises';
 import {
   ApiTags,
   ApiOperation,
@@ -45,6 +47,8 @@ export const ASSET_UPLOAD_LIMITS = {
 @UseGuards(RemoteUserGuard)
 @Controller('api/v1/markdown/assets')
 export class AssetController {
+  private readonly logger = new Logger(AssetController.name);
+
   constructor(private readonly assetService: AssetService) {}
 
   @Post('upload')
@@ -93,14 +97,39 @@ export class AssetController {
     const { stream, contentType, contentLength } =
       await this.assetService.getAssetStream(user.username, key);
 
-    if (contentType) {
-      res.setHeader('Content-Type', contentType);
-    }
+    res.setHeader('Content-Type', contentType ?? 'application/octet-stream');
     if (contentLength) {
       res.setHeader('Content-Length', contentLength);
     }
-    res.setHeader('Cache-Control', 'public, max-age=86400');
 
-    stream.pipe(res);
+    // 보안 헤더 설정: MIME 스니핑 차단 및 엄격한 CSP(샌드박스) 적용
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    );
+
+    // 개인 에셋 보안: 공유 캐시(CDN/프록시)의 타 사용자 캐싱 차단
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+
+    // SVG 파일은 스크립트 실행 공격 방지를 위해 attachment로 강제 다운로드 서빙
+    if (contentType === 'image/svg+xml') {
+      res.setHeader('Content-Disposition', 'attachment');
+    } else {
+      res.setHeader('Content-Disposition', 'inline');
+    }
+
+    try {
+      await pipeline(stream, res);
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      // 클라이언트가 전송 도중 연결을 끊은 경우를 제외하고 에러 로깅
+      if (error?.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+        this.logger.error(
+          `에셋 스트리밍 실패 (${key}): ${error?.message ?? '알 수 없는 스트림 에러'}`,
+        );
+      }
+    }
   }
 }
+
