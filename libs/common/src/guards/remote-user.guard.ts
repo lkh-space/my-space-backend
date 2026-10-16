@@ -38,26 +38,47 @@ export const MOCK_LOCAL_USER: AuthUser = {
 /**
  * Authelia SSO + Reverse Proxy ForwardAuth 헤더 검증 가드
  *
- * 1. 로컬 개발 환경(NODE_ENV !== 'production')에서 헤더가 없으면 MOCK_LOCAL_USER 주입
- * 2. 헤더에 Remote-User가 존재하면 헤더 값들을 파싱하여 req.user에 바인딩
- * 3. 프로덕션 환경(NODE_ENV === 'production')에서 Remote-User 헤더가 없으면 401 UnauthorizedException 발생
+ * [보안 원칙: Fail-Closed]
+ * 1. 기본적으로 모든 환경에서 Remote-User 헤더가 누락되면 401 Unauthorized를 발생시킵니다.
+ * 2. 명시적으로 IS_LOCAL=true가 설정된 로컬 개발 환경에서만 헤더 부재 시 MOCK_LOCAL_USER를 자동 주입합니다.
+ * 3. 프로덕션 환경에서 프록시 공유 시크릿(AUTH_FORWARDED_SECRET)이 설정된 경우,
+ *    x-forwarded-auth-secret 헤더를 검증하여 직접 포트 접근을 차단합니다.
+ * 4. Remote-User 식별자는 영문 대소문자, 숫자, 마침표, 밑줄, 하이픈, 골뱅이만 허용(/^[a-zA-Z0-9._@-]{1,100}$/)합니다.
  */
 @Injectable()
 export class RemoteUserGuard implements CanActivate {
+  private static readonly USERNAME_REGEX = /^[a-zA-Z0-9._@-]{1,100}$/;
+
   constructor(private readonly configService: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    const nodeEnv =
-      this.configService.get<string>('app.nodeEnv') ||
-      process.env.NODE_ENV ||
-      'development';
-    const isProduction = nodeEnv === 'production';
+    const isLocal =
+      this.configService.get<boolean>('app.isLocal') === true ||
+      process.env.IS_LOCAL === 'true';
 
-    const remoteUser = this.getHeader(request, 'remote-user');
+    // 1. 프록시 신뢰 검증 (Reverse Proxy ForwardAuth 공유 시크릿 검증)
+    // 로컬 환경이 아니고, 서버에 프록시 시크릿이 설정되어 있는 경우 헤더 일치 여부 검증
+    const proxySecret =
+      this.configService.get<string>('app.proxySharedSecret') ||
+      process.env.AUTH_FORWARDED_SECRET;
 
-    // 헤더에 remote-user가 있는 경우 (정상 인증된 요청)
-    if (remoteUser && remoteUser.trim().length > 0) {
+    if (!isLocal && proxySecret) {
+      const incomingSecret = this.getHeader(request, 'x-forwarded-auth-secret');
+      if (!incomingSecret || incomingSecret !== proxySecret) {
+        throw new UnauthorizedException('신뢰할 수 없는 프록시 요청입니다.');
+      }
+    }
+
+    const rawRemoteUser = this.getHeader(request, 'remote-user');
+    const remoteUser = rawRemoteUser?.trim();
+
+    // 2. 헤더에 remote-user가 있는 경우 (정상 인증된 요청)
+    if (remoteUser && remoteUser.length > 0) {
+      if (!RemoteUserGuard.USERNAME_REGEX.test(remoteUser)) {
+        throw new UnauthorizedException('유효하지 않은 사용자 식별자 형식입니다.');
+      }
+
       const displayName = this.getHeader(request, 'remote-name');
       const email = this.getHeader(request, 'remote-email');
       const rawGroups = this.getHeader(request, 'remote-groups');
@@ -70,7 +91,7 @@ export class RemoteUserGuard implements CanActivate {
         : [];
 
       request.user = {
-        username: remoteUser.trim(),
+        username: remoteUser,
         displayName: displayName?.trim() || undefined,
         email: email?.trim() || undefined,
         groups,
@@ -79,13 +100,13 @@ export class RemoteUserGuard implements CanActivate {
       return true;
     }
 
-    // 로컬/비프로덕션 환경이고 헤더가 없는 경우 -> Mock 유저 자동 주입 (DX)
-    if (!isProduction) {
+    // 3. 명시적 로컬 개발 환경(IS_LOCAL=true)이고 헤더가 없는 경우 -> Mock 유저 자동 주입 (DX)
+    if (isLocal) {
       request.user = { ...MOCK_LOCAL_USER };
       return true;
     }
 
-    // 프로덕션 환경인데 인증 헤더가 누락된 경우 -> 401 차단
+    // 4. 프로덕션 및 비로컬 환경인데 인증 헤더가 누락된 경우 -> 401 차단 (Fail-Closed)
     throw new UnauthorizedException('인증 헤더(Remote-User)가 누락되었습니다.');
   }
 

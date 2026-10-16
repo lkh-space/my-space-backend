@@ -20,5 +20,6 @@ export const appConfig = registerAs('app', () => {
       .split(',')
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0),
+    proxySharedSecret: process.env.AUTH_FORWARDED_SECRET || undefined,
   };
 });

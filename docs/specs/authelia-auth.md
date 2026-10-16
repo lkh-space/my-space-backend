@@ -1,7 +1,7 @@
 ---
 status: implemented
 owner: Keunhyeok Lim
-last-updated: 2026-10-03
+last-updated: 2026-10-16
 ---
 
 # Authelia SSO Gateway 연동 및 인증 사양서 (Authelia Auth Specification)
@@ -15,8 +15,9 @@ last-updated: 2026-10-03
 
 ### 목표 (Goals)
 * **ForwardAuth 헤더 기반 인증**: `Remote-User`, `Remote-Groups`, `Remote-Name`, `Remote-Email` 헤더 파싱 및 `req.user` 객체 바인딩
-* **로컬 개발 DX 지원**: `NODE_ENV !== 'production'` 환경에서 인증 헤더가 없을 경우 Mock 유저(`local-admin`) 자동 주입
-* **프로덕션 보안 방어**: 프로덕션 환경에서 `Remote-User` 누락 시 `401 Unauthorized` 예외 발생
+* **로컬 개발 DX 지원 (Fail-Closed 기본 원칙)**: 명시적 `IS_LOCAL=true` 활성화 시에만 인증 헤더 부재 시 Mock 유저(`local-admin`) 자동 주입
+* **프로덕션 및 비로컬 보안 방어**: `Remote-User` 누락 또는 부적절한 식별자 포맷 시 `401 Unauthorized` 예외 발생
+* **리버스 프록시 신뢰 검증**: 공유 시크릿(`AUTH_FORWARDED_SECRET`)을 통한 직접 포트 접근 위조 방지
 * **`@CurrentUser()` 데코레이터 제공**: 컨트롤러 핸들러에서 안전하고 직관적인 유저 객체 주입
 * **전역 감사 로그 인터셉터 (Audit Logging)**: 사용자 ID, 메서드, URL, 상태 코드, 소요 시간의 구조화 로깅
 * **유저 정보 엔드포인트 제공**: `GET /api/v1/auth/me`를 통해 현재 로그인한 사용자 정보 반환
@@ -44,16 +45,21 @@ last-updated: 2026-10-03
   - `Remote-Groups`: 쉼표로 구분된 그룹 목록 (선택, 예: `admins,dev`)
   - `Remote-Name`: 사용자 표시명 (선택, 예: `Administrator`)
   - `Remote-Email`: 이메일 주소 (선택, 예: `admin@homelab.local`)
-* **`BR-A02` (로컬 개발 환경 바이패스)**:
-  - `NODE_ENV !== 'production'` 조건일 때 `Remote-User` 헤더가 존재하지 않으면 다음 Mock 유저를 주입한다:
+* **`BR-A02` (로컬 개발 환경 명시적 바이패스 - Fail-Closed)**:
+  - 명시적으로 `IS_LOCAL=true` 플래그가 활성화되어 있고 `Remote-User` 헤더가 존재하지 않는 경우에만 Mock 유저를 주입한다:
     - `username`: `'local-admin'`
     - `displayName`: `'Local Developer'`
     - `email`: `'dev@homelab.local'`
     - `groups`: `['admins', 'dev']`
-* **`BR-A03` (프로덕션 인증 검증)**:
-  - `NODE_ENV === 'production'` 조건에서 `Remote-User` 헤더가 누락되었거나 빈 문자열일 경우 `401 UnauthorizedException`을 발생시킨다.
+  - `IS_LOCAL=true`가 아닌 모든 환경(운영, 스테이징 등)에서는 기본적으로 인증 헤더가 누락되면 요청을 거부한다 (Fail-Closed).
+* **`BR-A03` (인증 헤더 필수 검증)**:
+  - `IS_LOCAL=true`가 아닌 환경에서 `Remote-User` 헤더가 누락되었거나 공백일 경우 `401 UnauthorizedException`을 발생시킨다.
 * **`BR-A04` (그룹 파싱 규칙)**:
   - `Remote-Groups` 값은 쉼표(`,`)로 분리하며 각 항목의 앞뒤 공백을 제거(trim)하고 빈 문자열을 배제한다.
+* **`BR-A05` (사용자 식별자 유효성 검증)**:
+  - `Remote-User`는 1~100자의 영문 대소문자, 숫자, 마침표(`.`), 밑줄(`_`), 하이픈(`-`), 골뱅이(`@`)만 허용한다 (`/^[a-zA-Z0-9._@-]{1,100}$/`). 허용되지 않은 문자가 포함된 경우 `401 UnauthorizedException`을 발생시킨다.
+* **`BR-A06` (리버스 프록시 신뢰 검증)**:
+  - 시스템에 프록시 공유 시크릿(`AUTH_FORWARDED_SECRET`)이 설정된 경우, 비로컬 환경에서 요청 헤더 `X-Forwarded-Auth-Secret` 값이 일치하지 않으면 비인가 접근으로 간주하고 `401 UnauthorizedException`을 발생시킨다.
 
 ---
 

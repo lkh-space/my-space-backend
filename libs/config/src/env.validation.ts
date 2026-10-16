@@ -14,6 +14,7 @@ export const envSchema = z.object({
     .transform((val) => val === 'true'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).optional(),
   CORS_ORIGIN: z.string().optional(),
+  AUTH_FORWARDED_SECRET: z.string().optional(),
 
   // Database (PostgreSQL)
   DATABASE_URL: z.string().optional(),
