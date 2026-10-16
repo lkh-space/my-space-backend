@@ -28,10 +28,25 @@ import { UnlockPdfDto } from './dto/unlock-pdf.dto.js';
 import { MergePdfDto } from './dto/merge-pdf.dto.js';
 import { SplitAllPdfDto, SplitRangePdfDto } from './dto/split-pdf.dto.js';
 import {
+  MAX_SINGLE_FILE_SIZE,
   validateSinglePdf,
   validateMultiplePdfs,
 } from './utils/pdf-file.validator.js';
 import { buildMergeInputs } from './utils/password.parser.js';
+
+export const PDF_SINGLE_FILE_LIMITS = {
+  fileSize: MAX_SINGLE_FILE_SIZE, // 50MB (BR-P03)
+  files: 1,
+  fields: 10,
+  fieldSize: 1024 * 1024,
+};
+
+export const PDF_MERGE_FILES_LIMITS = {
+  fileSize: MAX_SINGLE_FILE_SIZE, // 50MB (파일당 상한)
+  files: 20, // 최대 20개 (BR-P02)
+  fields: 10,
+  fieldSize: 1024 * 1024,
+};
 
 @ApiTags('PDF')
 @Controller('api/v1/pdf')
@@ -43,7 +58,7 @@ export class PdfController {
    */
   @Post('inspect')
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: PDF_SINGLE_FILE_LIMITS }))
   @ApiOperation({
     summary: 'PDF 정보 및 암호화 여부 사전 검사',
     description:
@@ -93,7 +108,7 @@ export class PdfController {
    * PDF 암호 해제 (클린 PDF 다운로드)
    */
   @Post('unlock')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: PDF_SINGLE_FILE_LIMITS }))
   @ApiOperation({
     summary: 'PDF 암호 해제 (클린 PDF 다운로드)',
     description:
@@ -147,7 +162,7 @@ export class PdfController {
    * PDF 병합 (2~20개 파일)
    */
   @Post('merge')
-  @UseInterceptors(FilesInterceptor('files', 20))
+  @UseInterceptors(FilesInterceptor('files', 20, { limits: PDF_MERGE_FILES_LIMITS }))
   @ApiOperation({
     summary: 'PDF 파일 병합 (2~20개)',
     description:
@@ -203,7 +218,7 @@ export class PdfController {
    * PDF 범위 분할 및 추출
    */
   @Post('split/range')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: PDF_SINGLE_FILE_LIMITS }))
   @ApiOperation({
     summary: 'PDF 특정 페이지 범위 추출 및 분할',
     description:
@@ -266,7 +281,7 @@ export class PdfController {
    * PDF 전체 페이지 분할 (ZIP 다운로드)
    */
   @Post('split/all')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: PDF_SINGLE_FILE_LIMITS }))
   @ApiOperation({
     summary: 'PDF 전체 페이지 낱장 분할 (ZIP 압축 다운로드)',
     description:

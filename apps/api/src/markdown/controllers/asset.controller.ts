@@ -28,6 +28,15 @@ import { CurrentUser } from '@app/common/decorators/current-user.decorator.js';
 import { AssetService } from '../services/asset.service.js';
 import { AssetUploadResponseDto } from '../dto/asset.dto.js';
 
+export const MAX_ASSET_FILE_SIZE = 10 * 1024 * 1024; // 10MB (BR-M05)
+
+export const ASSET_UPLOAD_LIMITS = {
+  fileSize: MAX_ASSET_FILE_SIZE,
+  files: 1,
+  fields: 5,
+  fieldSize: 1024 * 1024,
+};
+
 @ApiTags('Markdown Assets')
 @ApiHeader({
   name: 'Remote-User',
@@ -39,7 +48,7 @@ export class AssetController {
   constructor(private readonly assetService: AssetService) {}
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: ASSET_UPLOAD_LIMITS }))
   @ApiOperation({
     summary: '마크다운 첨부 이미지 업로드',
     description: '문서에 포함될 이미지(PNG, JPEG, GIF, WebP, SVG, 최대 10MB)를 업로드하고 MinIO 에셋 버킷에 보관합니다.',

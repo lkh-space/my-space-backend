@@ -363,6 +363,54 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  describe('Multer 파일 업로드 예외 처리', () => {
+    it('MulterError LIMIT_FILE_SIZE 발생 시 413 Payload Too Large로 응답해야 한다', () => {
+      // given
+      const multerError = new Error('File too large') as Error & {
+        code: string;
+      };
+      multerError.name = 'MulterError';
+      multerError.code = 'LIMIT_FILE_SIZE';
+
+      // when
+      filter.catch(multerError, mockArgumentsHost);
+
+      // then
+      expect(mockResponse.status).toHaveBeenCalledWith(
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'File too large',
+        }),
+      );
+    });
+
+    it('MulterError LIMIT_FILE_COUNT 발생 시 400 Bad Request로 응답해야 한다', () => {
+      // given
+      const multerError = new Error('Too many files') as Error & {
+        code: string;
+      };
+      multerError.name = 'MulterError';
+      multerError.code = 'LIMIT_FILE_COUNT';
+
+      // when
+      filter.catch(multerError, mockArgumentsHost);
+
+      // then
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.BAD_REQUEST,
+          code: 'LIMIT_FILE_COUNT',
+          message: 'Too many files',
+        }),
+      );
+    });
+  });
+
   describe('미처리 Unhandled Error 처리', () => {
     it('일반 Error 발생 시 500 에러 및 error 레벨 로깅이 수행되어야 한다', () => {
       // given

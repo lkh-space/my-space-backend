@@ -40,6 +40,15 @@ import { AudioFileNotFoundException } from './exceptions/voice.exception.js';
 import { BaseDomainException } from '@app/common/exceptions/domain.exception.js';
 import { resolveDomainHttpStatus } from '@app/common/filters/domain-error-http.map.js';
 
+export const MAX_AUDIO_FILE_SIZE = 25 * 1024 * 1024; // 25MB (BR-A02)
+
+export const VOICE_AUDIO_LIMITS = {
+  fileSize: MAX_AUDIO_FILE_SIZE,
+  files: 1,
+  fields: 10,
+  fieldSize: 1024 * 1024,
+};
+
 @ApiTags('J.A.R.V.I.S. Voice & Neural Core')
 @ApiHeader({
   name: 'Remote-User',
@@ -54,7 +63,7 @@ export class VoiceController {
 
   @Post('voice/stream')
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor('audio'))
+  @UseInterceptors(FileInterceptor('audio', { limits: VOICE_AUDIO_LIMITS }))
   @ApiConsumes('multipart/form-data', 'application/json')
   @ApiOperation({
     summary: 'J.A.R.V.I.S. 실시간 음성/텍스트 SSE 스트리밍',

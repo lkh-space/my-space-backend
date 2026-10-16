@@ -39,6 +39,15 @@ import {
   DocumentListItemDto,
 } from '../dto/document.dto.js';
 
+export const MAX_MARKDOWN_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+export const MARKDOWN_IMPORT_LIMITS = {
+  fileSize: MAX_MARKDOWN_FILE_SIZE,
+  files: 1,
+  fields: 5,
+  fieldSize: 1024 * 1024,
+};
+
 @ApiTags('Markdown Documents')
 @ApiHeader({
   name: 'Remote-User',
@@ -136,7 +145,7 @@ export class DocumentController {
   }
 
   @Post('import')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: MARKDOWN_IMPORT_LIMITS }))
   @ApiOperation({
     summary: '.md 파일 업로드하여 문서로 가져오기',
     description: '.md 파일을 업로드하여 Frontmatter와 제목을 자동 추출하고 신규 문서로 생성합니다.',

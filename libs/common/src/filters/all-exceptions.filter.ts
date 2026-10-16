@@ -127,6 +127,29 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return { status, code, message, details };
     }
 
+    // Multer 직접 예외 방어 (NestJS transformException 누락 시 또는 원본 MulterError 유입 시)
+    if (
+      exception instanceof Error &&
+      (exception.name === 'MulterError' ||
+        ('code' in exception &&
+          typeof (exception as { code?: unknown }).code === 'string' &&
+          (exception as { code: string }).code.startsWith('LIMIT_')))
+    ) {
+      const multerCode = (exception as { code?: string }).code;
+      if (multerCode === 'LIMIT_FILE_SIZE') {
+        return {
+          status: HttpStatus.PAYLOAD_TOO_LARGE,
+          code: 'PAYLOAD_TOO_LARGE',
+          message: exception.message || '업로드 파일 크기 제한을 초과했습니다.',
+        };
+      }
+      return {
+        status: HttpStatus.BAD_REQUEST,
+        code: multerCode || 'BAD_REQUEST',
+        message: exception.message || '잘못된 파일 업로드 요청입니다.',
+      };
+    }
+
     if (exception instanceof Error) {
       return {
         status: HttpStatus.INTERNAL_SERVER_ERROR,
