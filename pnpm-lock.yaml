@@ -199,6 +199,9 @@ importers:
       '@qdrant/js-client-rest':
         specifier: ^1.19.0
         version: 1.19.0(typescript@6.0.3)
+      '@smithy/node-http-handler':
+        specifier: ^4.12.1
+        version: 4.12.1
       amqplib:
         specifier: ^2.2.0
         version: 2.2.0

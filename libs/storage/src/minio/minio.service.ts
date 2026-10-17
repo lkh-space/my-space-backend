@@ -13,6 +13,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { Readable } from 'node:stream';
 
 @Injectable()
@@ -54,6 +55,11 @@ export class MinioService implements OnModuleInit {
         secretAccessKey: secretKey,
       },
       forcePathStyle,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: 5000,
+        requestTimeout: 30000,
+      }),
+      maxAttempts: 3,
     });
 
     this.logger.log(`MinIO S3Client 초기화 완료 (Endpoint: ${endpoint})`);

@@ -40,6 +40,7 @@ export class QdrantService implements OnModuleInit {
       url,
       apiKey: apiKey || undefined,
       checkCompatibility: false,
+      timeout: 10000,
     });
   }
 

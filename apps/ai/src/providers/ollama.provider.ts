@@ -57,6 +57,7 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60000),
       });
 
       if (!res.ok) {
@@ -122,6 +123,7 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (!res.ok || !res.body) {
@@ -175,6 +177,7 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
           model: this.embeddingModel,
           prompt: text,
         }),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!res.ok) {

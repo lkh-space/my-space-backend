@@ -27,7 +27,7 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     );
 
     if (apiKey) {
-      this.client = new GoogleGenAI({ apiKey });
+      this.client = new GoogleGenAI({ apiKey, httpOptions: { timeout: 60000 } });
     } else {
       this.logger.warn(
         'GEMINI_API_KEY가 설정되지 않았습니다. Gemini Provider 호출 시 에러가 발생할 수 있습니다.',
@@ -41,7 +41,7 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
       if (!apiKey) {
         throw new Error('GEMINI_API_KEY가 설정되지 않아 호출할 수 없습니다.');
       }
-      this.client = new GoogleGenAI({ apiKey });
+      this.client = new GoogleGenAI({ apiKey, httpOptions: { timeout: 60000 } });
     }
     return this.client;
   }

@@ -57,6 +57,8 @@ export class OpenSearchService implements OnModuleInit {
 
     const clientOptions: Record<string, unknown> = {
       node,
+      requestTimeout: 10000,
+      maxRetries: 3,
       ssl: {
         rejectUnauthorized,
       },
