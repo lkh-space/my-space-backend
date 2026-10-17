@@ -5,7 +5,10 @@ import { MinioService } from '@app/storage/minio/minio.service.js';
 import { OpenSearchService } from '@app/storage/opensearch/opensearch.service.js';
 import { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
 import { TagService } from './tag.service.js';
-import { DocumentNotFoundException } from '../exceptions/markdown.exception.js';
+import {
+  DocumentNotFoundException,
+  DocumentVersionConflictException,
+} from '../exceptions/markdown.exception.js';
 
 describe('DocumentService', () => {
   let service: DocumentService;
@@ -25,6 +28,8 @@ describe('DocumentService', () => {
         findMany: vi.fn(),
         count: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
         delete: vi.fn(),
       },
       documentTag: {
@@ -177,8 +182,8 @@ describe('DocumentService', () => {
     });
   });
 
-  describe('updateDocument', () => {
-    it('본문이 수정되면 이전 버전을 리비전으로 저장하고 버전을 1 증가시켜야 한다', async () => {
+  describe('updateDocument (M-3 낙관적 동시성 잠금)', () => {
+    it('본문이 수정되면 이전 버전을 리비전으로 저장하고 낙관적 잠금으로 버전을 1 증가시켜야 한다', async () => {
       // given
       const ownerId = 'admin';
       const documentId = 'doc-1';
@@ -200,10 +205,16 @@ describe('DocumentService', () => {
         '# Old Content',
       );
 
-      vi.mocked(prisma.document.update).mockResolvedValueOnce({
+      vi.mocked(prisma.document.updateMany).mockResolvedValueOnce({
+        count: 1,
+      });
+
+      vi.mocked(prisma.document.findUniqueOrThrow).mockResolvedValueOnce({
         id: documentId,
         title: 'Old Title',
         folderId: null,
+        ownerId,
+        objectKey: 'docs/admin/doc-1/current.md',
         currentVersion: 2,
         createdAt: new Date('2026-10-05T10:00:00Z'),
         updatedAt: new Date('2026-10-05T10:05:00Z'),
@@ -220,6 +231,10 @@ describe('DocumentService', () => {
         'docs/admin/doc-1/revisions/v1.md',
         '# Old Content',
       );
+      expect(prisma.document.updateMany).toHaveBeenCalledWith({
+        where: { id: documentId, ownerId, currentVersion: 1 },
+        data: expect.objectContaining({ currentVersion: 2 }),
+      });
       expect(prisma.documentRevision.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           documentId,
@@ -227,6 +242,72 @@ describe('DocumentService', () => {
           objectKey: 'docs/admin/doc-1/revisions/v1.md',
         }),
       });
+    });
+
+    it('수정 요청 시 기대 버전(expectedVersion)과 DB 현재 버전이 다르면 DocumentVersionConflictException을 던져야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const documentId = 'doc-1';
+      const dto = { content: '# New' };
+      const expectedVersion = 2; // 클라이언트는 v2를 보냈으나
+
+      vi.mocked(prisma.document.findFirst).mockResolvedValueOnce({
+        id: documentId,
+        title: 'Title',
+        folderId: null,
+        objectKey: 'docs/admin/doc-1/current.md',
+        currentVersion: 3, // DB는 이미 v3임
+        tags: [],
+      } as never);
+
+      // when & then
+      await expect(
+        service.updateDocument(ownerId, documentId, dto, expectedVersion),
+      ).rejects.toThrow(DocumentVersionConflictException);
+
+      expect(minioService.putObject).not.toHaveBeenCalled();
+      expect(prisma.document.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('동시 수정 경쟁 조건으로 updateMany 갱신 건수가 0이면 409 예외를 던지고 MinIO를 보상 롤백해야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const documentId = 'doc-1';
+      const dto = { content: '# Race Update' };
+
+      vi.mocked(prisma.document.findFirst).mockResolvedValueOnce({
+        id: documentId,
+        title: 'Title',
+        folderId: null,
+        objectKey: 'docs/admin/doc-1/current.md',
+        currentVersion: 1,
+        tags: [],
+      } as never);
+
+      vi.mocked(minioService.getObjectAsString).mockResolvedValueOnce(
+        '# Original Content',
+      );
+
+      // 다른 트랜잭션이 먼저 버전을 올려서 count가 0이 됨
+      vi.mocked(prisma.document.updateMany).mockResolvedValueOnce({
+        count: 0,
+      });
+
+      // when & then
+      await expect(
+        service.updateDocument(ownerId, documentId, dto, 1),
+      ).rejects.toThrow(DocumentVersionConflictException);
+
+      // MinIO 보상 롤백 검증: 최신 본문을 원본으로 복구하고 임시 revision 객체 삭제
+      expect(minioService.putObject).toHaveBeenCalledWith(
+        'my-space-markdown',
+        'docs/admin/doc-1/current.md',
+        '# Original Content',
+      );
+      expect(minioService.deleteObject).toHaveBeenCalledWith(
+        'my-space-markdown',
+        'docs/admin/doc-1/revisions/v1.md',
+      );
     });
   });
 

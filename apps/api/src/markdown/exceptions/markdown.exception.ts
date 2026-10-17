@@ -64,3 +64,22 @@ export class InvalidAssetException extends BaseDomainException {
     super(`유효하지 않은 에셋 파일입니다: ${reason}`, { reason });
   }
 }
+
+/**
+ * 문서 수정 시 버전 충돌(Lost Update 방지)이 발생한 경우의 예외
+ */
+export class DocumentVersionConflictException extends BaseDomainException {
+  readonly code = 'DOCUMENT_VERSION_CONFLICT';
+
+  constructor(
+    documentId: string,
+    expectedVersion?: number,
+    currentVersion?: number,
+  ) {
+    super(
+      `문서 '${documentId}'의 버전이 일치하지 않습니다. 다른 사용자에 의해 수정되었을 수 있습니다. (예상: ${expectedVersion ?? '미지정'}, 현재: ${currentVersion ?? '불명'})`,
+      { documentId, expectedVersion, currentVersion },
+    );
+  }
+}
+

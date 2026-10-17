@@ -150,6 +150,37 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     }
 
+    // Prisma Client Known Request Errors 처리 (P2002: Unique constraint violation -> 409, P2025: Record not found -> 404)
+    if (
+      exception instanceof Error &&
+      (exception.name === 'PrismaClientKnownRequestError' ||
+        (exception.constructor &&
+          exception.constructor.name === 'PrismaClientKnownRequestError'))
+    ) {
+      const prismaCode = (exception as unknown as { code?: string }).code;
+      const details = (exception as unknown as { meta?: Record<string, unknown> })
+        .meta;
+
+      if (prismaCode === 'P2002') {
+        return {
+          status: HttpStatus.CONFLICT,
+          code: 'DATABASE_UNIQUE_CONFLICT',
+          message:
+            '데이터베이스 고유 제약 조건(Unique Constraint)을 위반하여 요청을 처리할 수 없습니다.',
+          details,
+        };
+      }
+
+      if (prismaCode === 'P2025') {
+        return {
+          status: HttpStatus.NOT_FOUND,
+          code: 'DATABASE_RECORD_NOT_FOUND',
+          message: '대상 데이터베이스 레코드를 찾을 수 없습니다.',
+          details,
+        };
+      }
+    }
+
     if (exception instanceof Error) {
       return {
         status: HttpStatus.INTERNAL_SERVER_ERROR,

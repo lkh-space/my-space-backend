@@ -16,6 +16,7 @@ import {
 import {
   DocumentNotFoundException,
   FolderNotFoundException,
+  DocumentVersionConflictException,
 } from '../exceptions/markdown.exception.js';
 
 @Injectable()
@@ -240,12 +241,13 @@ export class DocumentService {
   }
 
   /**
-   * 문서 수정 (내용 변경 시 리비전 보존 및 새 버전 생성)
+   * 문서 수정 (내용 변경 시 리비전 보존 및 새 버전 생성, 낙관적 잠금 지원)
    */
   async updateDocument(
     ownerId: string,
     documentId: string,
     dto: UpdateDocumentDto,
+    expectedVersion?: number,
   ): Promise<DocumentDetailDto> {
     const doc = await this.prisma.document.findFirst({
       where: { id: documentId, ownerId },
@@ -261,6 +263,18 @@ export class DocumentService {
 
     if (!doc) {
       throw new DocumentNotFoundException(documentId);
+    }
+
+    // 낙관적 동시성 검증: 클라이언트의 기대 버전과 DB 현재 버전 대조
+    if (
+      expectedVersion !== undefined &&
+      doc.currentVersion !== expectedVersion
+    ) {
+      throw new DocumentVersionConflictException(
+        doc.id,
+        expectedVersion,
+        doc.currentVersion,
+      );
     }
 
     // 폴더 변경 시 유효성 검증
@@ -360,13 +374,29 @@ export class DocumentService {
           });
         }
 
-        return tx.document.update({
-          where: { id: doc.id },
+        // 낙관적 잠금 updateMany: 읽기 시점의 currentVersion과 일치할 때만 갱신
+        const updateResult = await tx.document.updateMany({
+          where: {
+            id: doc.id,
+            ownerId,
+            currentVersion: doc.currentVersion,
+          },
           data: {
             title: newTitle,
             folderId: newFolderId,
             currentVersion: nextVersion,
           },
+        });
+
+        if (updateResult.count === 0) {
+          throw new DocumentVersionConflictException(
+            doc.id,
+            expectedVersion ?? doc.currentVersion,
+          );
+        }
+
+        return tx.document.findUniqueOrThrow({
+          where: { id: doc.id },
           include: {
             folder: { select: { name: true } },
           },

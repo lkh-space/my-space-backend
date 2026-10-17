@@ -68,6 +68,9 @@ last-updated: 2026-10-16
   - 에셋 스트리밍은 `pipeline`을 사용하여 S3 스트림 실패 시에도 프로세스 비정상 종료 없이 안전하게 정리되어야 한다.
 * **`BR-M06` (안전한 프론트매터 파싱 및 RCE 방지)**:
   - 마크다운 파싱 시 임의 코드 실행(eval)을 유발할 수 있는 엔진(JavaScript, CoffeeScript 등)은 엄격히 차단되어야 하며, 이를 위반하는 파일이나 문서는 즉시 거부된다 (`MARKDOWN_UNSAFE_FRONTMATTER`). 또한 파서의 전역 캐시로 인한 메모리 누수가 발생하지 않아야 한다.
+* **`BR-M07` (낙관적 동시성 잠금 및 Lost Update 방어)**:
+  - 문서 수정(`PUT /api/v1/markdown/documents/:id`) 시 `If-Match` 헤더 또는 `expectedVersion` 필드를 통해 클라이언트가 수정 대상 버전을 명시할 수 있다.
+  - 지정된 기대 버전과 DB 현재 버전이 일치하지 않거나, 동시 요청 경쟁 조건으로 인해 대상 버전 레코드 갱신에 실패한 경우 즉시 `DOCUMENT_VERSION_CONFLICT`(409 Conflict) 예외를 발생시키고 MinIO 스토리지를 원래 상태로 보상 롤백한다.
 
 ---
 
@@ -77,7 +80,7 @@ last-updated: 2026-10-16
 * `POST /api/v1/markdown/documents`: 문서 생성
 * `GET /api/v1/markdown/documents`: 문서 목록 조회 (페이징, 폴더, 태그 필터링)
 * `GET /api/v1/markdown/documents/:id`: 문서 상세 조회 (메타데이터 + MinIO 본문)
-* `PUT /api/v1/markdown/documents/:id`: 문서 수정 (리비전 생성)
+* `PUT /api/v1/markdown/documents/:id`: 문서 수정 (리비전 생성, `If-Match` 낙관적 잠금 지원)
 * `DELETE /api/v1/markdown/documents/:id`: 문서 삭제
 * `POST /api/v1/markdown/documents/import`: `.md` 파일 임포트
 * `GET /api/v1/markdown/documents/:id/export/md`: `.md` 파일 내보내기
@@ -105,6 +108,7 @@ last-updated: 2026-10-16
 | `FOLDER_ALREADY_EXISTS` | `FolderAlreadyExistsException` | `409 Conflict` |
 | `FOLDER_CYCLIC_DEPENDENCY` | `FolderCyclicDependencyException` | `400 Bad Request` |
 | `DOCUMENT_NOT_FOUND` | `DocumentNotFoundException` | `404 Not Found` |
+| `DOCUMENT_VERSION_CONFLICT` | `DocumentVersionConflictException` | `409 Conflict` |
 | `REVISION_NOT_FOUND` | `RevisionNotFoundException` | `404 Not Found` |
 | `INVALID_ASSET_FILE` | `InvalidAssetException` | `400 Bad Request` |
 | `MARKDOWN_UNSAFE_FRONTMATTER` | `UnsafeFrontmatterException` | `400 Bad Request` |

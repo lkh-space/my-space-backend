@@ -55,6 +55,7 @@ export const updateDocumentSchema = z.object({
   folderId: z.string().uuid('올바른 UUID 형식이 아닙니다.').nullable().optional(),
   tags: z.array(z.string().trim()).optional(),
   frontmatter: z.record(z.string(), z.unknown()).optional(),
+  expectedVersion: z.number().int().positive().optional(),
 });
 
 export class UpdateDocumentDto {
@@ -83,6 +84,12 @@ export class UpdateDocumentDto {
     description: '갱신할 Frontmatter 메타데이터',
   })
   frontmatter?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: '낙관적 동시성 제어를 위한 예상 현재 버전 (불일치 시 409 Conflict)',
+  })
+  expectedVersion?: number;
 }
 
 export const documentQuerySchema = z.object({

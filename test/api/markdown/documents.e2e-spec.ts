@@ -171,6 +171,61 @@ describe('Markdown Documents API (E2E)', () => {
         tags: ['updated'],
       });
     });
+
+    it('If-Match 헤더로 올바른 버전을 전달하면 정상 수정되어야 한다 (200)', async () => {
+      // given
+      const created = await withAuthHeaders(
+        ctx.req.post('/api/v1/markdown/documents').send({
+          title: '버전 매칭 테스트',
+          content: '초기 본문',
+        }),
+        DEFAULT_TEST_USER,
+      ).expect(201);
+
+      // when: If-Match: "1" 전달
+      const res = await withAuthHeaders(
+        ctx.req
+          .put(`/api/v1/markdown/documents/${created.body.id}`)
+          .set('If-Match', '"1"')
+          .send({
+            title: '버전 매칭 수정',
+            content: '수정 본문',
+          }),
+        DEFAULT_TEST_USER,
+      ).expect(200);
+
+      // then
+      expect(res.body.currentVersion).toBe(2);
+    });
+
+    it('If-Match 헤더로 일치하지 않는 버전을 전달하면 409 Conflict를 반환해야 한다 (낙관적 잠금 충돌 방어)', async () => {
+      // given
+      const created = await withAuthHeaders(
+        ctx.req.post('/api/v1/markdown/documents').send({
+          title: '버전 충돌 테스트',
+          content: '초기 본문',
+        }),
+        DEFAULT_TEST_USER,
+      ).expect(201);
+
+      // when: 현재 버전은 1인데 If-Match: "99" 전달
+      const res = await withAuthHeaders(
+        ctx.req
+          .put(`/api/v1/markdown/documents/${created.body.id}`)
+          .set('If-Match', '"99"')
+          .send({
+            title: '충돌 유발 수정',
+            content: '충돌 본문',
+          }),
+        DEFAULT_TEST_USER,
+      ).expect(409);
+
+      // then
+      expect(res.body).toMatchObject({
+        statusCode: 409,
+        code: 'DOCUMENT_VERSION_CONFLICT',
+      });
+    });
   });
 
   describe('DELETE /api/v1/markdown/documents/:id', () => {

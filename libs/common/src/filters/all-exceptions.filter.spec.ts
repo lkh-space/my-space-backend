@@ -468,4 +468,46 @@ describe('AllExceptionsFilter', () => {
       );
     });
   });
+
+  describe('PrismaClientKnownRequestError 처리', () => {
+    it('P2002(유니크 충돌) 발생 시 409 Conflict와 DATABASE_UNIQUE_CONFLICT 코드를 반환해야 한다', () => {
+      // given
+      const prismaError = new Error('Unique constraint failed on the fields: (`name`,`owner_id`)');
+      prismaError.name = 'PrismaClientKnownRequestError';
+      (prismaError as any).code = 'P2002';
+      (prismaError as any).meta = { target: ['name', 'owner_id'] };
+
+      // when
+      filter.catch(prismaError, mockArgumentsHost);
+
+      // then
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.CONFLICT,
+          code: 'DATABASE_UNIQUE_CONFLICT',
+          details: { target: ['name', 'owner_id'] },
+        }),
+      );
+    });
+
+    it('P2025(레코드 미존재) 발생 시 404 Not Found와 DATABASE_RECORD_NOT_FOUND 코드를 반환해야 한다', () => {
+      // given
+      const prismaError = new Error('An operation failed because it depends on one or more records that were required but not found.');
+      prismaError.name = 'PrismaClientKnownRequestError';
+      (prismaError as any).code = 'P2025';
+
+      // when
+      filter.catch(prismaError, mockArgumentsHost);
+
+      // then
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.NOT_FOUND,
+          code: 'DATABASE_RECORD_NOT_FOUND',
+        }),
+      );
+    });
+  });
 });

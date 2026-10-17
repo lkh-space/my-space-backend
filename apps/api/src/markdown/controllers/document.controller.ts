@@ -14,6 +14,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -110,21 +111,40 @@ export class DocumentController {
   }
 
   @Put(':id')
+  @ApiHeader({
+    name: 'If-Match',
+    description: '낙관적 잠금을 위한 대상 문서 버전 (예: "1" 또는 1). 불일치 시 409 Conflict 반환',
+    required: false,
+  })
   @ApiOperation({
     summary: '문서 수정',
-    description: '문서의 제목, 본문, 폴더 또는 태그를 수정합니다. 본문 변경 시 자동으로 이전 버전 리비전이 생성됩니다.',
+    description: '문서의 제목, 본문, 폴더 또는 태그를 수정합니다. 본문 변경 시 자동으로 이전 버전 리비전이 생성되며, If-Match 헤더를 통한 낙관적 동시성 잠금을 지원합니다.',
   })
   @ApiResponse({
     status: HttpStatus.OK,
     description: '문서 수정 성공',
     type: DocumentDetailDto,
   })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: '동시 수정 충돌 발생 (다른 요청에 의해 버전이 이미 변경됨)',
+  })
   async updateDocument(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: UpdateDocumentDto,
+    @Headers('if-match') ifMatch?: string,
   ): Promise<DocumentDetailDto> {
-    return this.documentService.updateDocument(user.username, id, dto);
+    const cleaned = ifMatch ? ifMatch.replace(/["'W/]/g, '').trim() : undefined;
+    const parsedHeaderVersion = cleaned && !isNaN(Number(cleaned)) ? Number(cleaned) : undefined;
+    const expectedVersion = parsedHeaderVersion ?? dto.expectedVersion;
+
+    return this.documentService.updateDocument(
+      user.username,
+      id,
+      dto,
+      expectedVersion,
+    );
   }
 
   @Delete(':id')
