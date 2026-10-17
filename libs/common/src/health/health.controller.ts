@@ -2,8 +2,10 @@ import { Controller, Get, HttpStatus } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { HealthCheckResponseDto } from './dto/health-check-response.dto.js';
+import { Public } from '../decorators/public.decorator.js';
 
 @ApiTags('System')
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly configService: ConfigService) {}

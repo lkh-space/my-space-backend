@@ -38,4 +38,24 @@ describe('PDF Inspect API (e2e) - POST /api/v1/pdf/inspect', () => {
     expect(res.body.code).toBe('PDF_CORRUPTED_FILE');
     expect(res.body.message).toContain('유효하지 않은 PDF');
   });
+
+  it('비로컬 환경(IS_LOCAL=false)에서 인증 헤더(Remote-User) 없이 요청 시 401 Unauthorized를 반환해야 한다 (Fail-Closed)', async () => {
+    // given
+    const sampleBuffer = await createTestPdfBuffer(1, '보안 테스트');
+    const originalIsLocal = process.env.IS_LOCAL;
+    process.env.IS_LOCAL = 'false';
+
+    try {
+      // when & then
+      const res = await ctx.req
+        .post(rootApiPath)
+        .attach('file', sampleBuffer, 'sample.pdf')
+        .expect(401);
+
+      expect(res.body.statusCode).toBe(401);
+      expect(res.body.message).toContain('인증 헤더(Remote-User)가 누락되었습니다.');
+    } finally {
+      process.env.IS_LOCAL = originalIsLocal;
+    }
+  });
 });

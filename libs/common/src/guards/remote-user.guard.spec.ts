@@ -25,6 +25,8 @@ describe('RemoteUserGuard 단위 테스트', () => {
         getRequest: () => request as Request,
         getResponse: () => ({}),
       }),
+      getHandler: vi.fn(),
+      getClass: vi.fn(),
     } as unknown as ExecutionContext;
 
     return { context, request };
@@ -230,6 +232,44 @@ describe('RemoteUserGuard 단위 테스트', () => {
       // then
       expect(result).toBe(true);
       expect(request.user?.username).toBe('authenticated-user');
+    });
+  });
+
+  describe('@Public() 데코레이터 바이패스 검증 (Secure by Default 예외 처리)', () => {
+    let reflector: { getAllAndOverride: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      vi.mocked(configService.get).mockImplementation((key: string) => {
+        if (key === 'app.isLocal') return false;
+        return undefined;
+      });
+
+      reflector = {
+        getAllAndOverride: vi.fn(),
+      };
+      guard = new RemoteUserGuard(configService, reflector as any);
+    });
+
+    it('@Public()이 적용된 경우(isPublic: true), 헤더가 없고 비로컬 환경이어도 401 없이 통과(true)한다', () => {
+      // given
+      reflector.getAllAndOverride.mockReturnValue(true);
+      const { context } = createMockExecutionContext({});
+
+      // when
+      const result = guard.canActivate(context);
+
+      // then
+      expect(result).toBe(true);
+      expect(reflector.getAllAndOverride).toHaveBeenCalled();
+    });
+
+    it('@Public()이 미적용된 경우(isPublic: false), 비로컬 환경에서 헤더가 없으면 401 UnauthorizedException을 발생시킨다', () => {
+      // given
+      reflector.getAllAndOverride.mockReturnValue(false);
+      const { context } = createMockExecutionContext({});
+
+      // when & then
+      expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
     });
   });
 });

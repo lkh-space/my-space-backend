@@ -2,10 +2,13 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
 
 /**
  * Authelia SSO 인증 통과 후 주입되는 사용자 정보 객체
@@ -49,13 +52,33 @@ export const MOCK_LOCAL_USER: AuthUser = {
 export class RemoteUserGuard implements CanActivate {
   private static readonly USERNAME_REGEX = /^[a-zA-Z0-9._@-]{1,100}$/;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() private readonly reflector?: Reflector,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
+    // 0. @Public() 데코레이터가 설정된 엔드포인트는 인증 검사를 완전히 바이패스합니다.
+    if (this.reflector && typeof context.getHandler === 'function') {
+      const targets = [
+        context.getHandler(),
+        typeof context.getClass === 'function' ? context.getClass() : undefined,
+      ].filter((t): t is (...args: unknown[]) => unknown => Boolean(t));
+
+      const isPublic = this.reflector.getAllAndOverride<boolean>(
+        IS_PUBLIC_KEY,
+        targets,
+      );
+      if (isPublic) {
+        return true;
+      }
+    }
+
     const request = context.switchToHttp().getRequest<Request>();
     const isLocal =
-      this.configService.get<boolean>('app.isLocal') === true ||
-      process.env.IS_LOCAL === 'true';
+      process.env.IS_LOCAL !== undefined
+        ? process.env.IS_LOCAL === 'true'
+        : this.configService.get<boolean>('app.isLocal') === true;
 
     // 1. 프록시 신뢰 검증 (Reverse Proxy ForwardAuth 공유 시크릿 검증)
     // 로컬 환경이 아니고, 서버에 프록시 시크릿이 설정되어 있는 경우 헤더 일치 여부 검증

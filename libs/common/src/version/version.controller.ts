@@ -2,8 +2,10 @@ import { Controller, Get, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { VersionService } from './version.service.js';
 import { VersionResponseDto } from './dto/version-info.dto.js';
+import { Public } from '../decorators/public.decorator.js';
 
 @ApiTags('System')
+@Public()
 @Controller(['version', 'api/v1/version'])
 export class VersionController {
   constructor(private readonly versionService: VersionService) {}

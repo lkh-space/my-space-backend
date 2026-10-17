@@ -1,4 +1,5 @@
 export * from './decorators/current-user.decorator.js';
+export * from './decorators/public.decorator.js';
 export * from './guards/remote-user.guard.js';
 export * from './filters/all-exceptions.filter.js';
 export * from './filters/domain-error-http.map.js';

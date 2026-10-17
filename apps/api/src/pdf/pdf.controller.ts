@@ -4,6 +4,7 @@ import {
   Post,
   HttpCode,
   UseInterceptors,
+  UseGuards,
   UploadedFile,
   UploadedFiles,
   Body,
@@ -33,6 +34,7 @@ import {
   validateMultiplePdfs,
 } from './utils/pdf-file.validator.js';
 import { buildMergeInputs } from './utils/password.parser.js';
+import { RemoteUserGuard } from '@app/common';
 
 export const PDF_SINGLE_FILE_LIMITS = {
   fileSize: MAX_SINGLE_FILE_SIZE, // 50MB (BR-P03)
@@ -49,6 +51,7 @@ export const PDF_MERGE_FILES_LIMITS = {
 };
 
 @ApiTags('PDF')
+@UseGuards(RemoteUserGuard)
 @Controller('api/v1/pdf')
 export class PdfController {
   constructor(private readonly pdfService: PdfService) {}
