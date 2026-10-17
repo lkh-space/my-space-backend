@@ -17,7 +17,7 @@ export class AiSearchService {
     const embeddingProvider = this.providerFactory.getEmbeddingProvider();
 
     this.logger.log(
-      `[AiSearch] 시맨틱 검색 수행 (owner=${ownerId}, query="${dto.query}", limit=${limit})`,
+      `[AiSearch] 시맨틱 검색 수행 (owner=${ownerId}, queryLength=${dto.query?.length ?? 0}, limit=${limit})`,
     );
 
     // 1. 질의어 768차원 임베딩 생성

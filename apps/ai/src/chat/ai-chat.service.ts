@@ -54,7 +54,8 @@ export class AiChatService {
       if (response.toolCalls && response.toolCalls.length > 0) {
         // 도구 호출 처리
         for (const tc of response.toolCalls) {
-          this.logger.log(`[ChatService] 도구 실행: ${tc.name} (${JSON.stringify(tc.args)})`);
+          const argKeys = Object.keys(tc.args || {}).join(', ');
+          this.logger.log(`[ChatService] 도구 실행: ${tc.name} (인자 필드: [${argKeys}])`);
           const toolResult = await this.aiToolsService.executeTool(
             tc.name,
             tc.args,
