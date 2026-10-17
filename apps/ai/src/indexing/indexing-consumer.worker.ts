@@ -11,6 +11,7 @@ interface IndexEvent {
   documentId: string;
   ownerId: string;
   version: number;
+  objectKey?: string;
   title: string;
   folderId?: string | null;
   tags?: string[];
@@ -85,8 +86,10 @@ export class IndexingConsumerWorker implements OnModuleInit {
         return;
       }
 
-      // 2. MinIO에서 최신 원문 다운로드
-      const objectKey = `docs/${message.ownerId}/${message.documentId}/current.md`;
+      // 2. MinIO에서 최신 원문 다운로드 (메시지의 objectKey 우선 사용, 부재 시 fallback)
+      const objectKey =
+        message.objectKey ||
+        `docs/${message.ownerId}/${message.documentId}/current.md`;
       let rawMarkdown = '';
       try {
         rawMarkdown = await this.minioService.getObjectAsString(

@@ -11,6 +11,7 @@ import {
   validateEnv,
 } from '@app/config/index.js';
 import { StorageModule } from '@app/storage/storage.module.js';
+import { MarkdownCoreModule } from '@app/markdown-core';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
@@ -54,6 +55,7 @@ import { VoiceController } from './voice/voice.controller.js';
       validate: validateEnv,
     }),
     StorageModule,
+    MarkdownCoreModule,
     VersionModule.register({ appName: 'ai' }),
     HealthModule,
     LoggerModule.forRootAsync({

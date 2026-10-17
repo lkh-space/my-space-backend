@@ -1,10 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { safeMatter } from '@app/common/markdown/safe-matter.js';
-import { FolderNotFoundException } from '@app/common';
+import { MarkdownWriterService } from '@app/markdown-core';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
-import { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
 import { ProviderFactory } from '../providers/provider.factory.js';
 import type { LlmToolDefinition } from '../providers/llm.provider.interface.js';
 
@@ -16,8 +14,8 @@ export class AiToolsService {
     private readonly prisma: PrismaService,
     private readonly minioService: MinioService,
     private readonly qdrantService: QdrantService,
-    private readonly rabbitmqService: RabbitmqService,
     private readonly providerFactory: ProviderFactory,
+    private readonly markdownWriterService: MarkdownWriterService,
   ) {}
 
   /**
@@ -179,64 +177,26 @@ export class AiToolsService {
     folderId?: string,
     tags?: string[],
   ): Promise<string> {
-    // 0. 폴더 지정 시 타인 폴더 참조(Cross-tenant Reference) 및 위조 방어: 소유권 검증
-    if (folderId) {
-      const folder = await this.prisma.folder.findFirst({
-        where: { id: folderId, ownerId },
-        select: { id: true },
-      });
-      if (!folder) {
-        throw new FolderNotFoundException(folderId);
-      }
-    }
+    const defaultTags = tags && tags.length > 0 ? tags : ['ai-generated'];
 
-    // 1. DB 생성
-    const created = await this.prisma.document.create({
-      data: {
+    // 도메인 핵심 서비스(MarkdownWriterService)를 통한 안전한 단일 소스 생성
+    const created = await this.markdownWriterService.createDocument(ownerId, {
+      title,
+      content,
+      folderId,
+      tags: defaultTags,
+      frontmatter: {
         title,
-        folderId: folderId || null,
-        ownerId,
-        currentVersion: 1,
-        objectKey: '',
+        tags: defaultTags,
+        createdAt: new Date().toISOString(),
       },
-    });
-
-    const objectKey = `docs/${ownerId}/${created.id}/current.md`;
-    const rawMarkdown = safeMatter.stringify(content, {
-      title,
-      tags: tags || ['ai-generated'],
-      createdAt: new Date().toISOString(),
-    });
-
-    // 2. MinIO 저장
-    await this.minioService.putObject(
-      this.minioService.docsBucket,
-      objectKey,
-      rawMarkdown,
-    );
-
-    // 3. DB objectKey 갱신
-    await this.prisma.document.update({
-      where: { id: created.id },
-      data: { objectKey },
-    });
-
-    // 4. RabbitMQ 인덱싱 이벤트 발행
-    await this.rabbitmqService.publish(this.rabbitmqService.indexingQueue, {
-      type: 'INDEX',
-      documentId: created.id,
-      ownerId,
-      version: 1,
-      title,
-      folderId: created.folderId,
-      tags: tags || ['ai-generated'],
-      timestamp: new Date().toISOString(),
     });
 
     return JSON.stringify({
       success: true,
       documentId: created.id,
       title: created.title,
+      folderId: created.folderId,
       message: '새 마크다운 문서로 성공적으로 저장되었습니다.',
     });
   }

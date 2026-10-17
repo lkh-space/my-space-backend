@@ -53,6 +53,15 @@
       "compilerOptions": {
         "tsConfigPath": "libs/config/tsconfig.lib.json"
       }
+    },
+    "markdown-core": {
+      "type": "library",
+      "root": "libs/markdown-core",
+      "entryFile": "index",
+      "sourceRoot": "libs/markdown-core/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/markdown-core/tsconfig.lib.json"
+      }
     }
   }
 }

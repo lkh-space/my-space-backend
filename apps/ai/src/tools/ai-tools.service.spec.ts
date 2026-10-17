@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiToolsService } from './ai-tools.service.js';
 import { NotFoundException } from '@nestjs/common';
 import { FolderNotFoundException } from '@app/common';
+import type { MarkdownWriterService } from '@app/markdown-core';
 import type { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import type { MinioService } from '@app/storage/minio/minio.service.js';
 import type { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
-import type { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
 import type { ProviderFactory } from '../providers/provider.factory.js';
 import type { EmbeddingProvider } from '../providers/llm.provider.interface.js';
 
@@ -14,9 +14,9 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
   let mockPrisma: PrismaService;
   let mockMinioService: MinioService;
   let mockQdrantService: QdrantService;
-  let mockRabbitmqService: RabbitmqService;
   let mockProviderFactory: ProviderFactory;
   let mockEmbeddingProvider: EmbeddingProvider;
+  let mockMarkdownWriterService: MarkdownWriterService;
 
   beforeEach(() => {
     mockEmbeddingProvider = {
@@ -36,35 +36,28 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
     mockPrisma = {
       document: {
         findFirst: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
-      folder: {
-        findFirst: vi.fn(),
       },
     } as unknown as PrismaService;
 
     mockMinioService = {
       docsBucket: 'test-docs-bucket',
       getObjectAsString: vi.fn(),
-      putObject: vi.fn(),
     } as unknown as MinioService;
 
     mockQdrantService = {
       searchPoints: vi.fn(),
     } as unknown as QdrantService;
 
-    mockRabbitmqService = {
-      indexingQueue: 'markdown-indexing-queue',
-      publish: vi.fn(),
-    } as unknown as RabbitmqService;
+    mockMarkdownWriterService = {
+      createDocument: vi.fn(),
+    } as unknown as MarkdownWriterService;
 
     service = new AiToolsService(
       mockPrisma,
       mockMinioService,
       mockQdrantService,
-      mockRabbitmqService,
       mockProviderFactory,
+      mockMarkdownWriterService,
     );
   });
 
@@ -168,14 +161,13 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
   });
 
   describe('save_to_markdown 도구 실행', () => {
-    it('문서를 DB에 생성하고 MinIO에 업로드 후 RabbitMQ 인덱싱 이벤트를 발행한다', async () => {
+    it('MarkdownWriterService에 위임하여 문서를 안전하게 생성한다', async () => {
       // given
-      (mockPrisma.document.create as any).mockResolvedValue({
+      (mockMarkdownWriterService.createDocument as any).mockResolvedValue({
         id: 'new-doc-1',
         title: '새 요약 문서',
         folderId: null,
       });
-      (mockPrisma.document.update as any).mockResolvedValue({});
 
       // when
       const result = await service.executeTool(
@@ -189,33 +181,25 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
       );
 
       // then
-      expect(mockPrisma.document.create).toHaveBeenCalled();
-      expect(mockMinioService.putObject).toHaveBeenCalledWith(
-        'test-docs-bucket',
-        'docs/user-1/new-doc-1/current.md',
-        expect.stringContaining('## 요약 내용'),
-      );
-      expect(mockRabbitmqService.publish).toHaveBeenCalledWith(
-        'markdown-indexing-queue',
+      expect(mockMarkdownWriterService.createDocument).toHaveBeenCalledWith(
+        'user-1',
         expect.objectContaining({
-          type: 'INDEX',
-          documentId: 'new-doc-1',
-          ownerId: 'user-1',
+          title: '새 요약 문서',
+          content: '## 요약 내용\n훌륭한 결과',
+          tags: ['summary'],
         }),
       );
       expect(result).toContain('새 요약 문서');
       expect(result).toContain('성공적으로 저장되었습니다');
     });
 
-    it('folderId가 지정되고 소유권이 일치하면 정상적으로 해당 폴더에 문서를 생성한다', async () => {
+    it('folderId가 지정되면 MarkdownWriterService에 해당 folderId를 전달한다', async () => {
       // given
-      (mockPrisma.folder.findFirst as any).mockResolvedValue({ id: 'valid-folder-1' });
-      (mockPrisma.document.create as any).mockResolvedValue({
+      (mockMarkdownWriterService.createDocument as any).mockResolvedValue({
         id: 'new-doc-2',
         title: '폴더 지정 문서',
         folderId: 'valid-folder-1',
       });
-      (mockPrisma.document.update as any).mockResolvedValue({});
 
       // when
       const result = await service.executeTool(
@@ -229,22 +213,20 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
       );
 
       // then
-      expect(mockPrisma.folder.findFirst).toHaveBeenCalledWith({
-        where: { id: 'valid-folder-1', ownerId: 'user-1' },
-        select: { id: true },
-      });
-      expect(mockPrisma.document.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
+      expect(mockMarkdownWriterService.createDocument).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
           folderId: 'valid-folder-1',
-          ownerId: 'user-1',
         }),
-      });
+      );
       expect(result).toContain('성공적으로 저장되었습니다');
     });
 
-    it('folderId가 타인의 것이거나 존재하지 않는 경우 FolderNotFoundException을 던지고 문서를 생성하지 않는다 (Cross-tenant 방어)', async () => {
+    it('존재하지 않거나 타인의 폴더인 경우 MarkdownWriterService에서 발생한 FolderNotFoundException을 전파한다 (Cross-tenant 방어)', async () => {
       // given
-      (mockPrisma.folder.findFirst as any).mockResolvedValue(null);
+      (mockMarkdownWriterService.createDocument as any).mockRejectedValue(
+        new FolderNotFoundException('victim-folder-999'),
+      );
 
       // when & then
       await expect(
@@ -258,13 +240,6 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
           'attacker-user',
         ),
       ).rejects.toThrow(FolderNotFoundException);
-
-      expect(mockPrisma.folder.findFirst).toHaveBeenCalledWith({
-        where: { id: 'victim-folder-999', ownerId: 'attacker-user' },
-        select: { id: true },
-      });
-      expect(mockPrisma.document.create).not.toHaveBeenCalled();
-      expect(mockMinioService.putObject).not.toHaveBeenCalled();
     });
   });
 

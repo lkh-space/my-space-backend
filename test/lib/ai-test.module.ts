@@ -13,6 +13,7 @@ import {
 } from '@app/config/index.js';
 import { HealthModule, CoreHttpModule } from '@app/common';
 import { StorageModule } from '@app/storage/storage.module.js';
+import { MarkdownCoreModule } from '@app/markdown-core';
 
 import { AiSearchController } from '../../apps/ai/src/search/ai-search.controller.js';
 import { AiSearchService } from '../../apps/ai/src/search/ai-search.service.js';
@@ -52,6 +53,7 @@ import { TestService } from './test.service.js';
       },
     }),
     StorageModule,
+    MarkdownCoreModule,
     HealthModule,
   ],
   controllers: [AiSearchController, AiChatController],

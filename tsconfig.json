@@ -23,7 +23,9 @@
       "@app/storage": ["./libs/storage/src/index.ts"],
       "@app/storage/*": ["./libs/storage/src/*"],
       "@app/config": ["./libs/config/src/index.ts"],
-      "@app/config/*": ["./libs/config/src/*"]
+      "@app/config/*": ["./libs/config/src/*"],
+      "@app/markdown-core": ["./libs/markdown-core/src/index.ts"],
+      "@app/markdown-core/*": ["./libs/markdown-core/src/*"]
     },
     "types": ["vitest/globals", "node", "multer"]
   }
