@@ -138,6 +138,85 @@ describe('DocumentService', () => {
     });
   });
 
+  describe('getDocuments (M-6 페이징 및 복합 인덱스 지원)', () => {
+    it('기본 오프셋 페이징으로 문서 목록 및 nextCursor를 올바르게 반환해야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const mockDocs = [
+        {
+          id: 'doc-1',
+          title: '문서 1',
+          folderId: null,
+          folder: null,
+          tags: [{ tag: { name: 'nestjs' } }],
+          currentVersion: 1,
+          createdAt: new Date('2026-10-05T10:00:00Z'),
+          updatedAt: new Date('2026-10-05T10:00:00Z'),
+        },
+      ];
+
+      vi.mocked(prisma.document.count).mockResolvedValueOnce(1);
+      vi.mocked(prisma.document.findMany).mockResolvedValueOnce(mockDocs as never);
+
+      // when
+      const result = await service.getDocuments(ownerId, { page: 1, limit: 1 });
+
+      // then
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(1);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe('doc-1');
+      expect(result.nextCursor).toBe('doc-1');
+      expect(prisma.document.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ownerId },
+          take: 1,
+          skip: 0,
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+    });
+
+    it('cursor가 주어지면 cursor 기반 페이징(skip: 1)으로 쿼리를 수행해야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const cursorId = 'doc-1';
+      const mockDocs = [
+        {
+          id: 'doc-2',
+          title: '문서 2',
+          folderId: null,
+          folder: null,
+          tags: [],
+          currentVersion: 1,
+          createdAt: new Date('2026-10-05T11:00:00Z'),
+          updatedAt: new Date('2026-10-05T11:00:00Z'),
+        },
+      ];
+
+      vi.mocked(prisma.document.count).mockResolvedValueOnce(2);
+      vi.mocked(prisma.document.findMany).mockResolvedValueOnce(mockDocs as never);
+
+      // when
+      const result = await service.getDocuments(ownerId, { cursor: cursorId, limit: 1 });
+
+      // then
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe('doc-2');
+      expect(result.nextCursor).toBe('doc-2');
+      expect(prisma.document.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ownerId },
+          cursor: { id: cursorId },
+          skip: 1,
+          take: 1,
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+    });
+  });
+
   describe('getDocumentDetail', () => {
     it('문서가 존재하면 MinIO 본문과 결합하여 정상 반환해야 한다', async () => {
       // given

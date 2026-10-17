@@ -95,6 +95,41 @@ describe('Markdown Documents API (E2E)', () => {
       expect(res.body.total).toBe(0);
       expect(res.body.items).toHaveLength(0);
     });
+
+    it('cursor 기반 페이징으로 다음 페이지를 정확히 순차 조회해야 한다 (M-6 커서 페이징 지원)', async () => {
+      // given: 문서 3개 순차 생성
+      for (let i = 1; i <= 3; i++) {
+        await withAuthHeaders(
+          ctx.req.post('/api/v1/markdown/documents').send({
+            title: `페이지네이션 문서 ${i}`,
+            content: `내용 ${i}`,
+          }),
+          DEFAULT_TEST_USER,
+        ).expect(201);
+      }
+
+      // when: 1페이지 (limit=2) 조회
+      const page1 = await withAuthHeaders(
+        ctx.req.get('/api/v1/markdown/documents?limit=2'),
+        DEFAULT_TEST_USER,
+      ).expect(200);
+
+      // then: 2개 반환 및 nextCursor 존재
+      expect(page1.body.items).toHaveLength(2);
+      expect(page1.body.nextCursor).toBe(page1.body.items[1].id);
+
+      // when: 2페이지 (cursor 지정) 조회
+      const page2 = await withAuthHeaders(
+        ctx.req.get(`/api/v1/markdown/documents?limit=2&cursor=${page1.body.nextCursor}`),
+        DEFAULT_TEST_USER,
+      ).expect(200);
+
+      // then: 나머지 1개 반환 및 1페이지 아이템과 중복 없음
+      expect(page2.body.items).toHaveLength(1);
+      const page1Ids = page1.body.items.map((i: any) => i.id);
+      expect(page1Ids).not.toContain(page2.body.items[0].id);
+      expect(page2.body.nextCursor).toBeNull();
+    });
   });
 
   describe('GET /api/v1/markdown/documents/:id', () => {

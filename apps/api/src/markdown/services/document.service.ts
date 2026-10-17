@@ -133,15 +133,19 @@ export class DocumentService {
   }
 
   /**
-   * 문서 목록 조회 (페이징, 폴더, 태그 필터링)
+   * 문서 목록 조회 (오프셋 및 커서 페이징, 폴더, 태그 필터링)
    */
   async getDocuments(
     ownerId: string,
     query: DocumentQueryDto,
-  ): Promise<{ total: number; page: number; limit: number; items: DocumentListItemDto[] }> {
-    const page = query.page ?? 1;
+  ): Promise<{
+    total: number;
+    page: number;
+    limit: number;
+    items: DocumentListItemDto[];
+    nextCursor: string | null;
+  }> {
     const limit = query.limit ?? 20;
-    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = { ownerId };
 
@@ -160,22 +164,35 @@ export class DocumentService {
       };
     }
 
-    const [total, documents] = await Promise.all([
-      this.prisma.document.count({ where }),
-      this.prisma.document.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { updatedAt: 'desc' },
-        include: {
-          folder: { select: { name: true } },
-          tags: {
-            select: {
-              tag: { select: { name: true } },
-            },
+    const findArgs: any = {
+      where,
+      take: limit,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      include: {
+        folder: { select: { name: true } },
+        tags: {
+          select: {
+            tag: { select: { name: true } },
           },
         },
-      }),
+      },
+    };
+
+    let page = 1;
+
+    if (query.cursor) {
+      // 커서 기반 페이징: 기준 ID의 다음 항목부터 조회
+      findArgs.cursor = { id: query.cursor };
+      findArgs.skip = 1;
+    } else {
+      // 오프셋 기반 페이징
+      page = query.page ?? 1;
+      findArgs.skip = (page - 1) * limit;
+    }
+
+    const [total, documents] = await Promise.all([
+      this.prisma.document.count({ where }),
+      this.prisma.document.findMany(findArgs),
     ]);
 
     const items = documents.map(
@@ -192,7 +209,9 @@ export class DocumentService {
         }),
     );
 
-    return { total, page, limit, items };
+    const nextCursor = items.length === limit ? items[items.length - 1].id : null;
+
+    return { total, page, limit, items, nextCursor };
   }
 
   /**

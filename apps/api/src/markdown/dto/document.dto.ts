@@ -97,6 +97,7 @@ export const documentQuerySchema = z.object({
   tag: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().uuid().optional(),
 });
 
 export class DocumentQueryDto {
@@ -108,11 +109,17 @@ export class DocumentQueryDto {
   @ApiPropertyOptional({ description: '특정 태그가 포함된 문서만 필터링' })
   tag?: string;
 
-  @ApiPropertyOptional({ example: 1, default: 1, description: '페이지 번호' })
+  @ApiPropertyOptional({ example: 1, default: 1, description: '페이지 번호 (오프셋 페이징 시)' })
   page?: number = 1;
 
   @ApiPropertyOptional({ example: 20, default: 20, description: '페이지당 항목 수' })
   limit?: number = 20;
+
+  @ApiPropertyOptional({
+    example: 'a1b2c3d4-0000-0000-0000-000000000000',
+    description: '커서 기반 페이징을 위한 기준 문서 ID (지정 시 cursor 페이징 수행)',
+  })
+  cursor?: string;
 }
 
 export class DocumentListItemDto {

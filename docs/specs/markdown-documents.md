@@ -76,6 +76,9 @@ last-updated: 2026-10-16
 * **`BR-M08` (원자적 태그 일괄 해석 및 경쟁 방어)**:
   - 문서 생성 및 수정 시 지정된 태그 배열은 N+1 반복 쿼리 대신 `createMany({ skipDuplicates: true })` 및 `findMany({ where: { name: { in: cleanNames } } })`를 통해 단 2회의 쿼리로 원자적으로 해석 및 등록되어야 한다.
   - 동일한 태그를 생성하려는 동시 요청이 발생하더라도 `skipDuplicates: true`를 통해 DB 유니크 제약 충돌(`P2002`)을 원천 방어하고 일관성을 보장한다.
+* **`BR-M09` (복합 정렬 인덱스 및 커서 기반 페이지네이션)**:
+  - 대량 문서 목록 조회 시 Filesort 병목을 방지하기 위해 `(owner_id, updated_at DESC)`, `(owner_id, folder_id, updated_at DESC)` 복합 정렬 인덱스와 `document_tags` 역조회를 위한 `(tag_id)` 인덱스를 유지한다.
+  - 대용량 데이터 환경에서의 깊은 오프셋 성능 저하를 방지하기 위해 커서 기반 페이징(`cursor`, `nextCursor`)을 지원하며, 동일 정렬 시 순서가 보장되도록 `[{ updatedAt: 'desc' }, { id: 'desc' }]`의 결정론적(deterministic) 정렬을 보장한다.
 
 ---
 
@@ -83,7 +86,7 @@ last-updated: 2026-10-16
 
 ### 5.1. 엔드포인트 목록
 * `POST /api/v1/markdown/documents`: 문서 생성
-* `GET /api/v1/markdown/documents`: 문서 목록 조회 (페이징, 폴더, 태그 필터링)
+* `GET /api/v1/markdown/documents`: 문서 목록 조회 (오프셋/커서 페이징, 폴더, 태그 필터링)
 * `GET /api/v1/markdown/documents/:id`: 문서 상세 조회 (메타데이터 + MinIO 본문)
 * `PUT /api/v1/markdown/documents/:id`: 문서 수정 (리비전 생성, `If-Match` 낙관적 잠금 지원)
 * `DELETE /api/v1/markdown/documents/:id`: 문서 삭제

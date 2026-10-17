@@ -45,6 +45,8 @@ model Document {
 
   @@index([ownerId])
   @@index([folderId])
+  @@index([ownerId, updatedAt(sort: Desc)])
+  @@index([ownerId, folderId, updatedAt(sort: Desc)])
   @@map("documents")
 }
 
@@ -70,6 +72,7 @@ model DocumentTag {
   tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([documentId, tagId])
+  @@index([tagId])
   @@map("document_tags")
 }
 
