@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
@@ -28,7 +29,7 @@ export class DocumentService {
   ) {}
 
   /**
-   * 신규 문서 생성
+   * 신규 문서 생성 (원자적 다단계 쓰기 보장)
    */
   async createDocument(
     ownerId: string,
@@ -50,41 +51,47 @@ export class DocumentService {
     const content = dto.content || '';
     const rawMarkdown = safeMatter.stringify(content, frontmatter);
 
-    // 태그 ID 확인/생성
+    // 식별자 및 오브젝트 키 사전 계산
+    const id = randomUUID();
+    const objectKey = `docs/${ownerId}/${id}/current.md`;
     const tagNames = dto.tags || [];
-    const tagIds = await this.tagService.resolveTags(ownerId, tagNames);
 
-    // 임시 objectKey 생성 후 DB 레코드 생성
-    const created = await this.prisma.document.create({
-      data: {
-        title: dto.title,
-        folderId,
-        ownerId,
-        currentVersion: 1,
-        objectKey: '', // 아래에서 생성 후 갱신
-        tags: {
-          create: tagIds.map((tagId) => ({ tagId })),
-        },
-      },
-      include: {
-        folder: { select: { name: true } },
-      },
-    });
-
-    const objectKey = `docs/${ownerId}/${created.id}/current.md`;
-
-    // MinIO에 최신 본문 저장
+    // 1. MinIO에 먼저 저장 (MinIO 실패 시 DB에는 아무런 레코드도 남지 않음)
     await this.minioService.putObject(
       this.minioService.docsBucket,
       objectKey,
       rawMarkdown,
     );
 
-    // DB objectKey 갱신
-    await this.prisma.document.update({
-      where: { id: created.id },
-      data: { objectKey },
-    });
+    let created: any;
+    try {
+      // 2. DB 레코드와 태그 관계를 단일 트랜잭션으로 원자적 생성
+      created = await this.prisma.$transaction(async (tx) => {
+        const tagIds = await this.tagService.resolveTags(ownerId, tagNames, tx);
+        return tx.document.create({
+          data: {
+            id,
+            title: dto.title,
+            folderId,
+            ownerId,
+            currentVersion: 1,
+            objectKey,
+            tags: {
+              create: tagIds.map((tagId) => ({ tagId })),
+            },
+          },
+          include: {
+            folder: { select: { name: true } },
+          },
+        });
+      });
+    } catch (err) {
+      // DB 트랜잭션 실패 시 MinIO 선행 저장 객체 즉시 보상 삭제
+      await this.minioService
+        .deleteObject(this.minioService.docsBucket, objectKey)
+        .catch(() => {});
+      throw err;
+    }
 
     // OpenSearch 비동기 색인
     await this.openSearchService.indexDocument({
@@ -290,30 +297,23 @@ export class DocumentService {
       JSON.stringify(dto.frontmatter) !== JSON.stringify(oldParsed.data);
     const isTitleChanged = dto.title !== undefined && dto.title !== doc.title;
 
+    const isModified =
+      isContentChanged || isFrontmatterChanged || isTitleChanged;
     let nextVersion = doc.currentVersion;
+    const revisionKey = `docs/${ownerId}/${doc.id}/revisions/v${doc.currentVersion}.md`;
+    let newRaw = '';
 
-    // 본문이나 제목, 메타데이터에 실제 변경이 있는 경우 리비전 생성
-    if (isContentChanged || isFrontmatterChanged || isTitleChanged) {
+    // 본문이나 제목, 메타데이터에 실제 변경이 있는 경우
+    if (isModified) {
       // 1. 현재 버전을 리비전 경로로 복사 저장
-      const revisionKey = `docs/${ownerId}/${doc.id}/revisions/v${doc.currentVersion}.md`;
       await this.minioService.putObject(
         this.minioService.docsBucket,
         revisionKey,
         oldRaw,
       );
 
-      // 2. DocumentRevision 레코드 생성
-      await this.prisma.documentRevision.create({
-        data: {
-          documentId: doc.id,
-          version: doc.currentVersion,
-          title: doc.title,
-          objectKey: revisionKey,
-        },
-      });
-
-      // 3. 최신 본문 MinIO 갱신
-      const newRaw = safeMatter.stringify(newContent, newFrontmatter);
+      // 2. 최신 본문 MinIO 갱신
+      newRaw = safeMatter.stringify(newContent, newFrontmatter);
       await this.minioService.putObject(
         this.minioService.docsBucket,
         doc.objectKey,
@@ -323,35 +323,67 @@ export class DocumentService {
       nextVersion = doc.currentVersion + 1;
     }
 
-    // 태그 변경 처리
     let activeTagNames = doc.tags.map((t: any) => t.tag.name);
     if (dto.tags !== undefined) {
-      const tagIds = await this.tagService.resolveTags(ownerId, dto.tags);
-      // 기존 태그 연결 제거 후 재연결
-      await this.prisma.documentTag.deleteMany({
-        where: { documentId: doc.id },
-      });
-      await this.prisma.documentTag.createMany({
-        data: tagIds.map((tagId) => ({
-          documentId: doc.id,
-          tagId,
-        })),
-      });
       activeTagNames = dto.tags;
     }
 
-    // DB 문서 레코드 갱신
-    const updated = await this.prisma.document.update({
-      where: { id: doc.id },
-      data: {
-        title: newTitle,
-        folderId: newFolderId,
-        currentVersion: nextVersion,
-      },
-      include: {
-        folder: { select: { name: true } },
-      },
-    });
+    let updated: any;
+    try {
+      // 3. DB 트랜잭션으로 리비전 생성, 태그 교체, 문서 갱신을 단일 트랜잭션으로 원자적 수행
+      updated = await this.prisma.$transaction(async (tx) => {
+        if (isModified) {
+          await tx.documentRevision.create({
+            data: {
+              documentId: doc.id,
+              version: doc.currentVersion,
+              title: doc.title,
+              objectKey: revisionKey,
+            },
+          });
+        }
+
+        if (dto.tags !== undefined) {
+          const tagIds = await this.tagService.resolveTags(
+            ownerId,
+            dto.tags,
+            tx,
+          );
+          await tx.documentTag.deleteMany({
+            where: { documentId: doc.id },
+          });
+          await tx.documentTag.createMany({
+            data: tagIds.map((tagId) => ({
+              documentId: doc.id,
+              tagId,
+            })),
+          });
+        }
+
+        return tx.document.update({
+          where: { id: doc.id },
+          data: {
+            title: newTitle,
+            folderId: newFolderId,
+            currentVersion: nextVersion,
+          },
+          include: {
+            folder: { select: { name: true } },
+          },
+        });
+      });
+    } catch (err) {
+      // DB 실패 시 MinIO 상태 원복 보상 롤백
+      if (isModified) {
+        await this.minioService
+          .putObject(this.minioService.docsBucket, doc.objectKey, oldRaw)
+          .catch(() => {});
+        await this.minioService
+          .deleteObject(this.minioService.docsBucket, revisionKey)
+          .catch(() => {});
+      }
+      throw err;
+    }
 
     // OpenSearch 색인 갱신
     await this.openSearchService.indexDocument({
@@ -392,7 +424,7 @@ export class DocumentService {
   }
 
   /**
-   * 문서 삭제 (DB, MinIO, OpenSearch 연계 정리)
+   * 문서 삭제 (DB를 먼저 삭제하여 고아 레코드/본문 유실 방어)
    */
   async deleteDocument(ownerId: string, documentId: string): Promise<void> {
     const doc = await this.prisma.document.findFirst({
@@ -404,25 +436,24 @@ export class DocumentService {
       throw new DocumentNotFoundException(documentId);
     }
 
-    // 1. MinIO 최신 및 리비전 오브젝트 삭제
-    await this.minioService.deleteObject(
-      this.minioService.docsBucket,
-      doc.objectKey,
-    );
-    for (const rev of doc.revisions) {
-      await this.minioService.deleteObject(
-        this.minioService.docsBucket,
-        rev.objectKey,
-      );
-    }
-
-    // 2. OpenSearch 색인 삭제
-    await this.openSearchService.deleteDocument(doc.id);
-
-    // 3. DB 삭제 (Cascade로 DocumentRevision, DocumentTag 자동 삭제)
+    // 1. DB 먼저 삭제 (실패 시 MinIO 객체는 안전하게 보존됨)
     await this.prisma.document.delete({
       where: { id: doc.id },
     });
+
+    // 2. DB 삭제 성공 후 MinIO 최신 및 리비전 오브젝트 정리
+    await this.minioService
+      .deleteObject(this.minioService.docsBucket, doc.objectKey)
+      .catch(() => {});
+
+    for (const rev of doc.revisions) {
+      await this.minioService
+        .deleteObject(this.minioService.docsBucket, rev.objectKey)
+        .catch(() => {});
+    }
+
+    // 3. OpenSearch 색인 삭제
+    await this.openSearchService.deleteDocument(doc.id).catch(() => {});
 
     // 4. RabbitMQ 비동기 벡터 색인 삭제 이벤트 발행
     await this.rabbitmqService.publish(this.rabbitmqService.indexingQueue, {

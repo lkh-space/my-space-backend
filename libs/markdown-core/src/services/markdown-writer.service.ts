@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { FolderNotFoundException } from '@app/common';
@@ -24,12 +25,13 @@ export class MarkdownWriterService {
   /**
    * 신규 마크다운 문서 생성 도메인 유스케이스
    *
-   * [보안 및 무결성 보장]
+   * [보안 및 원자적 무결성 보장]
    * 1. 폴더 소유권 검증 (Cross-tenant Reference 차단)
-   * 2. Tag 관계 테이블 정합성 보장 (DocumentTag 연동)
-   * 3. S3/MinIO 원문 안전 저장
-   * 4. OpenSearch 전문 검색 색인 동기화
-   * 5. RabbitMQ 벡터 인덱싱 이벤트 발행 (objectKey 포함하여 워커의 키 추론 제거)
+   * 2. ID 및 ObjectKey 사전 생성 (고아 objectKey 레코드 방지)
+   * 3. MinIO 선행 저장 (실패 시 DB 오염 원천 방지)
+   * 4. DB 트랜잭션 원자적 생성 및 Tag 정합성 보장 (실패 시 MinIO 보상 롤백 삭제)
+   * 5. OpenSearch 전문 검색 색인 동기화
+   * 6. RabbitMQ 벡터 인덱싱 이벤트 발행 (objectKey 포함)
    */
   async createDocument(
     ownerId: string,
@@ -52,43 +54,54 @@ export class MarkdownWriterService {
     const content = params.content || '';
     const rawMarkdown = safeMatter.stringify(content, frontmatter);
 
-    // 태그 ID 확인/생성
+    // 식별자 및 오브젝트 키 사전 계산
+    const id = randomUUID();
+    const objectKey = `docs/${ownerId}/${id}/current.md`;
     const tagNames = params.tags || [];
-    const tagIds = await this.tagResolverService.resolveTags(ownerId, tagNames);
 
-    // 1. DB 레코드 생성
-    const created = await this.prisma.document.create({
-      data: {
-        title: params.title,
-        folderId,
-        ownerId,
-        currentVersion: 1,
-        objectKey: '', // 아래에서 생성 후 갱신
-        tags: {
-          create: tagIds.map((tagId) => ({ tagId })),
-        },
-      },
-      include: {
-        folder: { select: { name: true } },
-      },
-    });
-
-    const objectKey = `docs/${ownerId}/${created.id}/current.md`;
-
-    // 2. MinIO에 최신 본문 저장
+    // 1. MinIO에 먼저 저장 (MinIO 실패 시 DB에는 아무런 레코드도 남지 않음)
     await this.minioService.putObject(
       this.minioService.docsBucket,
       objectKey,
       rawMarkdown,
     );
 
-    // 3. DB objectKey 갱신
-    const updated = await this.prisma.document.update({
-      where: { id: created.id },
-      data: { objectKey },
-    });
+    let created: any;
+    try {
+      // 2. DB 레코드와 태그 관계를 단일 트랜잭션으로 원자적 생성
+      created = await this.prisma.$transaction(async (tx) => {
+        const tagIds = await this.tagResolverService.resolveTags(
+          ownerId,
+          tagNames,
+          tx,
+        );
 
-    // 4. OpenSearch 비동기 색인 (키워드 및 전문 검색 보장)
+        return tx.document.create({
+          data: {
+            id,
+            title: params.title,
+            folderId,
+            ownerId,
+            currentVersion: 1,
+            objectKey,
+            tags: {
+              create: tagIds.map((tagId) => ({ tagId })),
+            },
+          },
+          include: {
+            folder: { select: { name: true } },
+          },
+        });
+      });
+    } catch (err) {
+      // DB 트랜잭션 실패 시 MinIO 선행 저장 객체 즉시 보상 삭제
+      await this.minioService
+        .deleteObject(this.minioService.docsBucket, objectKey)
+        .catch(() => {});
+      throw err;
+    }
+
+    // 3. OpenSearch 비동기 색인 (키워드 및 전문 검색 보장)
     await this.openSearchService.indexDocument({
       id: created.id,
       title: created.title,
@@ -96,10 +109,10 @@ export class MarkdownWriterService {
       tags: tagNames,
       folderId: created.folderId,
       ownerId,
-      updatedAt: updated.updatedAt.toISOString(),
+      updatedAt: created.updatedAt.toISOString(),
     });
 
-    // 5. RabbitMQ 비동기 벡터 인덱싱 이벤트 발행 (objectKey 명시적 전달)
+    // 4. RabbitMQ 비동기 벡터 인덱싱 이벤트 발행 (objectKey 명시적 전달)
     await this.rabbitmqService.publish(this.rabbitmqService.indexingQueue, {
       type: 'INDEX',
       documentId: created.id,
@@ -120,7 +133,7 @@ export class MarkdownWriterService {
       tags: tagNames,
       objectKey,
       currentVersion: 1,
-      updatedAt: updated.updatedAt,
+      updatedAt: created.updatedAt,
       createdAt: created.createdAt,
     };
   }

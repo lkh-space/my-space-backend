@@ -17,27 +17,28 @@ describe('MarkdownWriterService (BDD 단위 테스트)', () => {
 
   beforeEach(() => {
     mockPrisma = {
+      $transaction: vi.fn(async (cb: any) => cb(mockPrisma)),
       folder: {
         findFirst: vi.fn(),
       },
       document: {
         create: vi.fn(),
-        update: vi.fn(),
       },
     } as unknown as PrismaService;
 
     mockMinio = {
       docsBucket: 'test-bucket',
-      putObject: vi.fn(),
+      putObject: vi.fn().mockResolvedValue(undefined),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
     } as unknown as MinioService;
 
     mockOpenSearch = {
-      indexDocument: vi.fn(),
+      indexDocument: vi.fn().mockResolvedValue(undefined),
     } as unknown as OpenSearchService;
 
     mockRabbitmq = {
       indexingQueue: 'markdown-indexing-queue',
-      publish: vi.fn(),
+      publish: vi.fn().mockResolvedValue(true),
     } as unknown as RabbitmqService;
 
     mockTagResolver = {
@@ -57,18 +58,16 @@ describe('MarkdownWriterService (BDD 단위 테스트)', () => {
     // given
     const ownerId = 'user-test';
     const now = new Date();
-    (mockPrisma.document.create as any).mockResolvedValue({
-      id: 'doc-uuid-1',
-      title: '테스트 문서',
-      folderId: null,
+    (mockPrisma.document.create as any).mockImplementation(async (args: any) => ({
+      id: args.data.id,
+      title: args.data.title,
+      folderId: args.data.folderId,
       folder: null,
+      objectKey: args.data.objectKey,
+      currentVersion: 1,
       createdAt: now,
       updatedAt: now,
-    });
-    (mockPrisma.document.update as any).mockResolvedValue({
-      id: 'doc-uuid-1',
-      updatedAt: now,
-    });
+    }));
 
     // when
     const result = await service.createDocument(ownerId, {
@@ -78,26 +77,27 @@ describe('MarkdownWriterService (BDD 단위 테스트)', () => {
     });
 
     // then
-    expect(result.id).toBe('doc-uuid-1');
-    expect(result.objectKey).toBe('docs/user-test/doc-uuid-1/current.md');
+    expect(result.id).toBeDefined();
+    expect(result.objectKey).toBe(`docs/user-test/${result.id}/current.md`);
 
     // 태그 리졸버 검증
-    expect(mockTagResolver.resolveTags).toHaveBeenCalledWith(ownerId, [
-      'guide',
-      'test',
-    ]);
+    expect(mockTagResolver.resolveTags).toHaveBeenCalledWith(
+      ownerId,
+      ['guide', 'test'],
+      mockPrisma,
+    );
 
-    // MinIO 업로드 검증
+    // MinIO 선행 업로드 검증
     expect(mockMinio.putObject).toHaveBeenCalledWith(
       'test-bucket',
-      'docs/user-test/doc-uuid-1/current.md',
+      `docs/user-test/${result.id}/current.md`,
       expect.stringContaining('# 안녕하세요'),
     );
 
     // OpenSearch 전문 색인 검증
     expect(mockOpenSearch.indexDocument).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'doc-uuid-1',
+        id: result.id,
         title: '테스트 문서',
         body: '# 안녕하세요',
         tags: ['guide', 'test'],
@@ -105,16 +105,43 @@ describe('MarkdownWriterService (BDD 단위 테스트)', () => {
       }),
     );
 
-    // RabbitMQ 인덱싱 이벤트에 objectKey 포함 검증 (H-9 핵심)
+    // RabbitMQ 인덱싱 이벤트에 objectKey 포함 검증
     expect(mockRabbitmq.publish).toHaveBeenCalledWith(
       'markdown-indexing-queue',
       expect.objectContaining({
         type: 'INDEX',
-        documentId: 'doc-uuid-1',
+        documentId: result.id,
         ownerId,
-        objectKey: 'docs/user-test/doc-uuid-1/current.md',
+        objectKey: `docs/user-test/${result.id}/current.md`,
       }),
     );
+  });
+
+  it('DB 트랜잭션 실패 시 MinIO에 선행 저장된 파일을 보상 삭제(롤백)해야 한다 (M-2 원자성)', async () => {
+    // given
+    const ownerId = 'user-test';
+    (mockPrisma.document.create as any).mockRejectedValue(
+      new Error('DB 트랜잭션 제약조건 실패'),
+    );
+
+    // when & then
+    await expect(
+      service.createDocument(ownerId, {
+        title: '실패할 문서',
+        content: '내용',
+      }),
+    ).rejects.toThrow('DB 트랜잭션 제약조건 실패');
+
+    // MinIO에 선행 업로드 시도 후 즉시 보상 삭제되었는지 검증
+    expect(mockMinio.putObject).toHaveBeenCalled();
+    expect(mockMinio.deleteObject).toHaveBeenCalledWith(
+      'test-bucket',
+      expect.stringMatching(/^docs\/user-test\/.+\/current\.md$/),
+    );
+
+    // 실패했으므로 후속 OpenSearch 및 RabbitMQ는 호출되지 않아야 함
+    expect(mockOpenSearch.indexDocument).not.toHaveBeenCalled();
+    expect(mockRabbitmq.publish).not.toHaveBeenCalled();
   });
 
   it('존재하지 않거나 타인의 폴더를 지정한 경우 FolderNotFoundException을 던져야 한다', async () => {

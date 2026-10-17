@@ -17,6 +17,7 @@ describe('DocumentService', () => {
 
   beforeEach(() => {
     prisma = {
+      $transaction: vi.fn(async (cb: any) => cb(prisma)),
       folder: { findFirst: vi.fn() },
       document: {
         create: vi.fn(),
@@ -66,7 +67,7 @@ describe('DocumentService', () => {
   });
 
   describe('createDocument', () => {
-    it('새 문서를 정상적으로 생성하고 MinIO 저장 및 OpenSearch 색인을 수행해야 한다', async () => {
+    it('새 문서를 정상적으로 생성하고 MinIO 선행 저장, 원자적 DB 생성 및 OpenSearch 색인을 수행해야 한다', async () => {
       // given
       const ownerId = 'admin';
       const dto = {
@@ -75,37 +76,59 @@ describe('DocumentService', () => {
         tags: ['nestjs'],
       };
 
-      vi.mocked(prisma.document.create).mockResolvedValueOnce({
-        id: 'doc-1',
-        title: dto.title,
+      vi.mocked(prisma.document.create).mockImplementation(async (args: any) => ({
+        id: args.data.id,
+        title: args.data.title,
         folderId: null,
         ownerId,
         currentVersion: 1,
-        objectKey: '',
+        objectKey: args.data.objectKey,
         createdAt: new Date('2026-10-05T10:00:00Z'),
         updatedAt: new Date('2026-10-05T10:00:00Z'),
         folder: null,
-      } as never);
-
-      vi.mocked(prisma.document.update).mockResolvedValueOnce({} as never);
+      } as never));
 
       // when
       const result = await service.createDocument(ownerId, dto);
 
       // then
-      expect(result.id).toBe('doc-1');
+      expect(result.id).toBeDefined();
       expect(result.title).toBe('NestJS Guide');
       expect(result.currentVersion).toBe(1);
       expect(minioService.putObject).toHaveBeenCalledWith(
         'my-space-markdown',
-        'docs/admin/doc-1/current.md',
+        `docs/admin/${result.id}/current.md`,
         expect.stringContaining('# Hello NestJS'),
       );
       expect(openSearchService.indexDocument).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: 'doc-1',
+          id: result.id,
           title: 'NestJS Guide',
         }),
+      );
+    });
+
+    it('DB 트랜잭션 실패 시 MinIO 선행 저장 파일을 보상 삭제(롤백)해야 한다 (M-2 원자성)', async () => {
+      // given
+      const ownerId = 'admin';
+      const dto = {
+        title: 'Failed Document',
+        content: '# Will Fail',
+      };
+
+      vi.mocked(prisma.document.create).mockRejectedValueOnce(
+        new Error('DB Unique Constraint Error'),
+      );
+
+      // when & then
+      await expect(service.createDocument(ownerId, dto)).rejects.toThrow(
+        'DB Unique Constraint Error',
+      );
+
+      expect(minioService.putObject).toHaveBeenCalled();
+      expect(minioService.deleteObject).toHaveBeenCalledWith(
+        'my-space-markdown',
+        expect.stringMatching(/^docs\/admin\/.+\/current\.md$/),
       );
     });
   });
@@ -225,18 +248,17 @@ describe('DocumentService', () => {
         stream: null as never,
       };
 
-      vi.mocked(prisma.document.create).mockResolvedValueOnce({
+      vi.mocked(prisma.document.create).mockImplementation(async (args: any) => ({
         id: 'doc-imported',
-        title: 'Imported Document',
+        title: args.data.title,
         folderId: null,
         ownerId,
         currentVersion: 1,
-        objectKey: '',
+        objectKey: args.data.objectKey,
         createdAt: new Date('2026-10-05T10:00:00Z'),
         updatedAt: new Date('2026-10-05T10:00:00Z'),
         folder: null,
-      } as never);
-      vi.mocked(prisma.document.update).mockResolvedValueOnce({} as never);
+      } as never));
 
       // when
       const result = await service.importMarkdown(ownerId, file);
@@ -245,6 +267,72 @@ describe('DocumentService', () => {
       expect(result.id).toBe('doc-imported');
       expect(result.title).toBe('Imported Document');
       expect(result.tags).toEqual(['nestjs', 'test']);
+    });
+  });
+
+  describe('deleteDocument (M-2 DB 선행 삭제 원자성)', () => {
+    it('문서 삭제 시 DB 레코드를 먼저 삭제하고 이후 MinIO 객체 및 OpenSearch 색인을 정리해야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const documentId = 'doc-1';
+      const callOrder: string[] = [];
+
+      vi.mocked(prisma.document.findFirst).mockResolvedValueOnce({
+        id: documentId,
+        ownerId,
+        objectKey: 'docs/admin/doc-1/current.md',
+        revisions: [{ objectKey: 'docs/admin/doc-1/revisions/v1.md' }],
+      } as never);
+
+      vi.mocked(prisma.document.delete).mockImplementation(async () => {
+        callOrder.push('DB_DELETE');
+        return {} as never;
+      });
+
+      vi.mocked(minioService.deleteObject).mockImplementation(async () => {
+        callOrder.push('MINIO_DELETE');
+      });
+
+      vi.mocked(openSearchService.deleteDocument).mockImplementation(async () => {
+        callOrder.push('OPENSEARCH_DELETE');
+      });
+
+      // when
+      await service.deleteDocument(ownerId, documentId);
+
+      // then: DB 삭제가 MinIO 및 OpenSearch보다 항상 먼저 실행되어야 함
+      expect(callOrder[0]).toBe('DB_DELETE');
+      expect(callOrder).toContain('MINIO_DELETE');
+      expect(callOrder).toContain('OPENSEARCH_DELETE');
+      expect(rabbitmqService.publish).toHaveBeenCalledWith(
+        'markdown-indexing-queue',
+        expect.objectContaining({ type: 'DELETE', documentId }),
+      );
+    });
+
+    it('DB 삭제가 실패하면 MinIO 객체는 안전하게 보존되어야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const documentId = 'doc-1';
+
+      vi.mocked(prisma.document.findFirst).mockResolvedValueOnce({
+        id: documentId,
+        ownerId,
+        objectKey: 'docs/admin/doc-1/current.md',
+        revisions: [],
+      } as never);
+
+      vi.mocked(prisma.document.delete).mockRejectedValueOnce(
+        new Error('DB Foreign Key Conflict'),
+      );
+
+      // when & then
+      await expect(
+        service.deleteDocument(ownerId, documentId),
+      ).rejects.toThrow('DB Foreign Key Conflict');
+
+      expect(minioService.deleteObject).not.toHaveBeenCalled();
+      expect(openSearchService.deleteDocument).not.toHaveBeenCalled();
     });
   });
 
