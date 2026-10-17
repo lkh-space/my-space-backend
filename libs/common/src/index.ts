@@ -10,5 +10,6 @@ export * from './health/index.js';
 export * from './version/index.js';
 export * from './markdown/safe-matter.js';
 export * from './markdown/unsafe-frontmatter.exception.js';
+export * from './exceptions/folder-not-found.exception.js';
 export * from './core/core-http.module.js';
 

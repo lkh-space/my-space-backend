@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { safeMatter } from '@app/common/markdown/safe-matter.js';
+import { FolderNotFoundException } from '@app/common';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
@@ -178,6 +179,17 @@ export class AiToolsService {
     folderId?: string,
     tags?: string[],
   ): Promise<string> {
+    // 0. 폴더 지정 시 타인 폴더 참조(Cross-tenant Reference) 및 위조 방어: 소유권 검증
+    if (folderId) {
+      const folder = await this.prisma.folder.findFirst({
+        where: { id: folderId, ownerId },
+        select: { id: true },
+      });
+      if (!folder) {
+        throw new FolderNotFoundException(folderId);
+      }
+    }
+
     // 1. DB 생성
     const created = await this.prisma.document.create({
       data: {

@@ -1,15 +1,5 @@
 import { BaseDomainException } from '@app/common/exceptions/domain.exception.js';
-
-/**
- * 폴더를 찾을 수 없는 경우 발생하는 예외
- */
-export class FolderNotFoundException extends BaseDomainException {
-  readonly code = 'FOLDER_NOT_FOUND';
-
-  constructor(folderId: string) {
-    super(`폴더를 찾을 수 없습니다: ${folderId}`, { folderId });
-  }
-}
+export { FolderNotFoundException } from '@app/common';
 
 /**
  * 동일 부모 경로에 동일 이름의 폴더가 이미 존재하는 경우 발생하는 예외
