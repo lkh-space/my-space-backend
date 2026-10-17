@@ -194,6 +194,61 @@ describe('IndexingConsumerWorker (인덱싱 워커 H-4 멱등성 및 원자적 �
       );
       expect(qdrantService.upsertPoints).not.toHaveBeenCalled();
     });
+
+    it('동일한 메시지가 재전달(redelivery)되어도 결정적 UUID를 통해 멱등하게 덮어써져야 한다', async () => {
+      // given: 동일한 내용과 버전의 문서 메시지
+      const rawMarkdown = '# 재전달 테스트\n동일 내용 청크';
+      vi.mocked(minioService.getObjectAsString).mockResolvedValue(rawMarkdown);
+
+      const message = {
+        type: 'INDEX' as const,
+        documentId: 'doc-redelivery',
+        ownerId: 'user-admin',
+        version: 1,
+        title: '재전달 문서',
+        timestamp: new Date().toISOString(),
+      };
+
+      // when: 동일 메시지 2회 처리 (Redelivery 시뮬레이션)
+      await worker.handleMessage(message);
+      await worker.handleMessage(message);
+
+      // then: 2회 모두 동일한 결정적 chunk ID를 사용하여 upsertPoints 호출
+      expect(qdrantService.upsertPoints).toHaveBeenCalledTimes(2);
+      const expectedChunkId = generateDeterministicChunkId('doc-redelivery', 0);
+
+      const firstCallArgs = vi.mocked(qdrantService.upsertPoints).mock.calls[0][0];
+      const secondCallArgs = vi.mocked(qdrantService.upsertPoints).mock.calls[1][0];
+
+      expect(firstCallArgs[0].id).toBe(expectedChunkId);
+      expect(secondCallArgs[0].id).toBe(expectedChunkId);
+      // ID가 동일하므로 Qdrant 레벨에서 포인트가 증식되지 않고 덮어써짐이 보장됨
+    });
+
+    it('Qdrant upsertPoints 실패 시 에러를 throw하여 컨슈머의 nack 및 DLQ 전파를 유도해야 한다', async () => {
+      // given
+      const rawMarkdown = '# 장애 테스트';
+      vi.mocked(minioService.getObjectAsString).mockResolvedValueOnce(rawMarkdown);
+      vi.mocked(qdrantService.upsertPoints).mockRejectedValueOnce(
+        new Error('Qdrant connection refused'),
+      );
+
+      const message = {
+        type: 'INDEX' as const,
+        documentId: 'doc-qdrant-fail',
+        ownerId: 'user-admin',
+        version: 1,
+        title: '실패 문서',
+        timestamp: new Date().toISOString(),
+      };
+
+      // when & then
+      await expect(worker.handleMessage(message)).rejects.toThrow(
+        'Qdrant connection refused',
+      );
+      // Qdrant 저장 실패 시 구버전 삭제가 실행되지 않아야 데이터 유실 방지
+      expect(qdrantService.deleteOldVersionsByDocument).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleMessage - DELETE 이벤트', () => {

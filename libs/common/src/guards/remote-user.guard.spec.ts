@@ -106,6 +106,17 @@ describe('RemoteUserGuard 단위 테스트', () => {
       expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
     });
 
+    it('IS_LOCAL이 아예 정의되지 않은(undefined) 기본 프로덕션 상태에서도 Mock 관리자가 주입되지 않고 401을 던져야 한다 (C-2 회귀 방지)', () => {
+      // given
+      vi.mocked(configService.get).mockReturnValue(undefined);
+      delete process.env.IS_LOCAL;
+      const prodGuard = new RemoteUserGuard(configService);
+      const { context } = createMockExecutionContext({});
+
+      // when & then
+      expect(() => prodGuard.canActivate(context)).toThrow(UnauthorizedException);
+    });
+
     it('Remote-User 헤더가 공백 문자열인 경우 UnauthorizedException을 던진다', () => {
       // given
       const { context } = createMockExecutionContext({

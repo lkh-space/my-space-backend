@@ -11,7 +11,7 @@ import {
   aiConfig,
   validateEnv,
 } from '@app/config/index.js';
-import { HealthModule, CoreHttpModule } from '@app/common';
+import { VersionModule, HealthModule, CoreHttpModule } from '@app/common';
 import { StorageModule } from '@app/storage/storage.module.js';
 import { MarkdownCoreModule } from '@app/markdown-core';
 
@@ -22,6 +22,16 @@ import { AiChatService } from '../../apps/ai/src/chat/ai-chat.service.js';
 import { AiToolsService } from '../../apps/ai/src/tools/ai-tools.service.js';
 import { IndexingConsumerWorker } from '../../apps/ai/src/indexing/indexing-consumer.worker.js';
 import { ProviderFactory } from '../../apps/ai/src/providers/provider.factory.js';
+import { NeuralSessionController } from '../../apps/ai/src/sessions/neural-session.controller.js';
+import { NeuralSessionService } from '../../apps/ai/src/sessions/neural-session.service.js';
+import { VoiceController } from '../../apps/ai/src/voice/voice.controller.js';
+import { JarvisVoiceService } from '../../apps/ai/src/voice/jarvis-voice.service.js';
+import { ActiveStreamRegistry } from '../../apps/ai/src/voice/active-stream.registry.js';
+import { AudioBufferStore } from '../../apps/ai/src/voice/storage/audio-buffer.store.js';
+import {
+  MockSttProvider,
+  MockTtsProvider,
+} from '../../apps/ai/src/providers/voice/mock-voice.provider.js';
 
 import {
   FakeLlmProvider,
@@ -54,14 +64,26 @@ import { TestService } from './test.service.js';
     }),
     StorageModule,
     MarkdownCoreModule,
+    VersionModule.register({ appName: 'ai' }),
     HealthModule,
   ],
-  controllers: [AiSearchController, AiChatController],
+  controllers: [
+    AiSearchController,
+    AiChatController,
+    NeuralSessionController,
+    VoiceController,
+  ],
   providers: [
     AiSearchService,
     AiChatService,
     AiToolsService,
     IndexingConsumerWorker,
+    NeuralSessionService,
+    ActiveStreamRegistry,
+    AudioBufferStore,
+    MockSttProvider,
+    MockTtsProvider,
+    JarvisVoiceService,
     FakeLlmProvider,
     FakeEmbeddingProvider,
     FakeProviderFactory,

@@ -3,10 +3,31 @@ import { Readable } from 'node:stream';
 import type {
   QdrantPointPayload,
   QdrantSearchResult,
+  QdrantService,
 } from '@app/storage/qdrant/qdrant.service.js';
+import type {
+  OpenSearchService,
+  IndexedDocument,
+  SearchOptions,
+  SearchHitResult,
+} from '@app/storage/opensearch/opensearch.service.js';
+import type { MinioService } from '@app/storage/minio/minio.service.js';
+import type { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
 
 @Injectable()
-export class FakeMinioService {
+export class FakeMinioService
+  implements
+    Pick<
+      MinioService,
+      | 'docsBucket'
+      | 'assetsBucket'
+      | 'putObject'
+      | 'getObjectAsString'
+      | 'getObjectStream'
+      | 'deleteObject'
+      | 'deleteObjects'
+    >
+{
   private readonly storage = new Map<
     string,
     { body: Buffer; contentType: string }
@@ -72,16 +93,89 @@ export class FakeMinioService {
 }
 
 @Injectable()
-export class FakeOpenSearchService {
-  async indexDocument(_doc: unknown): Promise<void> {}
-  async deleteDocument(_id: string): Promise<void> {}
-  async searchDocuments(_options: unknown): Promise<{ total: number; hits: unknown[] }> {
-    return { total: 0, hits: [] };
+export class FakeOpenSearchService
+  implements
+    Pick<
+      OpenSearchService,
+      'indexDocument' | 'deleteDocument' | 'search' | 'ensureIndex'
+    >
+{
+  private readonly docs = new Map<string, IndexedDocument>();
+
+  async ensureIndex(): Promise<void> {}
+
+  async indexDocument(
+    doc: IndexedDocument,
+    _options?: { refresh?: boolean | 'wait_for' },
+  ): Promise<void> {
+    this.docs.set(doc.id, { ...doc });
+  }
+
+  async deleteDocument(
+    id: string,
+    _options?: { refresh?: boolean | 'wait_for' },
+  ): Promise<void> {
+    this.docs.delete(id);
+  }
+
+  /**
+   * 실제 OpenSearchService.search 시그니처와 완전히 일치하는 검색 모사
+   */
+  async search(
+    options: SearchOptions,
+  ): Promise<{ total: number; hits: SearchHitResult[] }> {
+    let filtered = Array.from(this.docs.values()).filter(
+      (d) => d.ownerId === options.ownerId,
+    );
+
+    if (options.folderId) {
+      filtered = filtered.filter((d) => d.folderId === options.folderId);
+    }
+
+    if (options.tag) {
+      const lowerTag = options.tag.toLowerCase();
+      filtered = filtered.filter((d) =>
+        (d.tags || []).some((t) => t.toLowerCase() === lowerTag),
+      );
+    }
+
+    if (options.query && options.query.trim().length > 0) {
+      const q = options.query.toLowerCase();
+      filtered = filtered.filter(
+        (d) =>
+          d.title.toLowerCase().includes(q) ||
+          d.body.toLowerCase().includes(q) ||
+          (d.tags || []).some((t) => t.toLowerCase().includes(q)),
+      );
+    }
+
+    const total = filtered.length;
+    const offset = options.offset ?? 0;
+    const limit = options.limit ?? 20;
+    const paged = filtered.slice(offset, offset + limit);
+
+    const hits: SearchHitResult[] = paged.map((d) => ({
+      id: d.id,
+      title: d.title,
+      tags: d.tags,
+      folderId: d.folderId,
+      updatedAt: d.updatedAt,
+      score: 1.0,
+      snippet: d.body.slice(0, 150),
+    }));
+
+    return { total, hits };
+  }
+
+  clear(): void {
+    this.docs.clear();
   }
 }
 
 @Injectable()
-export class FakeRabbitmqService {
+export class FakeRabbitmqService
+  implements Pick<RabbitmqService, 'indexingQueue' | 'publish' | 'consume'>
+{
   readonly indexingQueue = 'markdown-indexing-queue';
 
   async publish(
@@ -96,7 +190,19 @@ export class FakeRabbitmqService {
 }
 
 @Injectable()
-export class FakeQdrantService {
+export class FakeQdrantService
+  implements
+    Pick<
+      QdrantService,
+      | 'collectionName'
+      | 'vectorDimension'
+      | 'ensureCollection'
+      | 'upsertPoints'
+      | 'deletePointsByFilter'
+      | 'searchSimilar'
+      | 'countPoints'
+    >
+{
   readonly collectionName = 'test-personal-documents';
   readonly vectorDimension = 768;
 
