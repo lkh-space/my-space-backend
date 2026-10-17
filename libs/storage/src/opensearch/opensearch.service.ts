@@ -242,4 +242,15 @@ export class OpenSearchService implements OnModuleInit {
       throw error;
     }
   }
+
+  async checkHealth(): Promise<void> {
+    if (!this.client) {
+      throw new Error('OpenSearch 클라이언트가 초기화되지 않았습니다');
+    }
+    const result = await this.client.ping();
+    if (!result.body) {
+      throw new Error('OpenSearch ping 실패');
+    }
+  }
 }
+

@@ -20,6 +20,7 @@ describe('RabbitmqService (신뢰성 있는 브로커 연동, DLQ 및 재시도 
       bindQueue: vi.fn().mockResolvedValue({}),
       prefetch: vi.fn().mockResolvedValue({}),
       consume: vi.fn().mockResolvedValue({ consumerTag: 'tag-1' }),
+      cancel: vi.fn().mockResolvedValue(true),
       sendToQueue: vi.fn().mockReturnValue(true),
       ack: vi.fn(),
       nack: vi.fn(),
@@ -322,6 +323,7 @@ describe('RabbitmqService (신뢰성 있는 브로커 연동, DLQ 및 재시도 
       mockChannel.consume.mockImplementation(
         async (_queue: string, callback: (msg: any) => Promise<void>) => {
           messageConsumerCallback = callback;
+          return { consumerTag: 'tag-trace' };
         },
       );
 
@@ -351,4 +353,90 @@ describe('RabbitmqService (신뢰성 있는 브로커 연동, DLQ 및 재시도 
       expect(mockChannel.ack).toHaveBeenCalledWith(mockMsg);
     });
   });
+
+  describe('우아한 종료 (Graceful Shutdown) 및 Drain 메커니즘', () => {
+    it('consume 등록 시 consumerTag가 보관되고 disconnect 시 channel.cancel(consumerTag)이 호출되어 신규 인입을 차단해야 한다', async () => {
+      // given
+      await service.connect();
+      await service.consume('markdown-indexing-queue', vi.fn());
+
+      expect(service.getActiveConsumerTags().get('markdown-indexing-queue')).toBe('tag-1');
+
+      // when
+      await service.disconnect();
+
+      // then
+      expect(mockChannel.cancel).toHaveBeenCalledWith('tag-1');
+      expect(mockChannel.close).toHaveBeenCalled();
+      expect(mockConnection.close).toHaveBeenCalled();
+    });
+
+    it('진행 중인 in-flight 메시지가 완료될 때까지 대기 후 안전하게 연결을 해제해야 한다', async () => {
+      // given
+      await service.connect();
+
+      let messageCallback: (msg: any) => Promise<void> = () => Promise.resolve();
+      mockChannel.consume.mockImplementation(async (_queue: string, cb: any) => {
+        messageCallback = cb;
+        return { consumerTag: 'tag-drain' };
+      });
+
+      let finishTask: () => void = () => {};
+      const longRunningTask = new Promise<void>((resolve) => {
+        finishTask = resolve;
+      });
+
+      const handler = vi.fn().mockImplementation(async () => {
+        await longRunningTask;
+      });
+
+      await service.consume('markdown-indexing-queue', handler);
+
+      const mockMsg = {
+        content: Buffer.from(JSON.stringify({ docId: 'doc-drain-1' })),
+        properties: { headers: {} },
+      };
+
+      // when: 메시지 처리 시작 (비동기)
+      const messagePromise = messageCallback(mockMsg);
+      expect(service.getActiveMessageCount()).toBe(1);
+
+      // disconnect 실행 (drain 대기 중)
+      let disconnectFinished = false;
+      const disconnectPromise = service.disconnect().then(() => {
+        disconnectFinished = true;
+      });
+
+      // 아직 task가 끝나지 않았으므로 disconnect도 완료되지 않아야 함
+      await new Promise((r) => setTimeout(r, 60));
+      expect(disconnectFinished).toBe(false);
+      expect(service.getActiveMessageCount()).toBe(1);
+
+      // task 완료
+      finishTask();
+      await messagePromise;
+      await disconnectPromise;
+
+      // then
+      expect(disconnectFinished).toBe(true);
+      expect(service.getActiveMessageCount()).toBe(0);
+      expect(mockChannel.cancel).toHaveBeenCalledWith('tag-drain');
+      expect(mockChannel.close).toHaveBeenCalled();
+    });
+
+    it('checkHealth 호출 시 채널이 연결되어 있으면 정상 통과하고 없으면 예외를 던져야 한다', async () => {
+      // given
+      await service.connect();
+
+      // then: 연결 상태
+      await expect(service.checkHealth()).resolves.toBeUndefined();
+
+      // when: 연결 해제
+      await service.disconnect();
+
+      // then: 해제 상태
+      await expect(service.checkHealth()).rejects.toThrow('RabbitMQ 채널이 활성화되어 있지 않습니다');
+    });
+  });
 });
+

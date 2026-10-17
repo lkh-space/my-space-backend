@@ -83,6 +83,8 @@ async function bootstrap() {
     allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
   });
 
+  app.enableShutdownHooks();
+
   await app.listen(port);
 
   const versionService = app.get(VersionService);

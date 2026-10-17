@@ -207,4 +207,16 @@ export class MinioService implements OnModuleInit {
       );
     }
   }
+
+  async checkHealth(): Promise<void> {
+    if (!this.client) {
+      throw new Error('MinIO 클라이언트가 초기화되지 않았습니다');
+    }
+    await this.client.send(
+      new HeadBucketCommand({
+        Bucket: this.bucketDocs,
+      }),
+    );
+  }
 }
+

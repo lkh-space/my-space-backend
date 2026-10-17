@@ -71,7 +71,8 @@ async function bootstrap() {
     allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
   });
 
-  // 루트 .env(PORT=3000) 상속 간섭을 방지하고, 명시된 포트 또는 AI 기본 포트 3001 우선 보장
+  app.enableShutdownHooks();
+
   const port =
     process.env.PORT && process.env.PORT !== '3000'
       ? Number(process.env.PORT)
@@ -87,4 +88,8 @@ async function bootstrap() {
   );
 }
 
-bootstrap();
+await bootstrap().catch((err: unknown) => {
+  console.error('AI Application Bootstrap Failure:', err);
+  process.exit(1);
+});
+

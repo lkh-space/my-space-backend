@@ -46,6 +46,12 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   // 재연결 시 자동 재등록할 Consumer 목록
   private readonly registeredConsumers = new Map<string, RegisteredConsumer>();
 
+  // 진행 중인 메시지(in-flight) 수 카운터
+  private activeMessageCount = 0;
+
+  // 큐별 활성 Consumer Tag 매핑 (Graceful Shutdown 시 브로커 수신 차단용)
+  private readonly activeConsumerTags = new Map<string, string>();
+
   constructor(
     private readonly configService: ConfigService,
     @Optional() private readonly traceContextService?: TraceContextService,
@@ -267,79 +273,140 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
 
     await this.channel.prefetch(1);
 
-    await this.channel.consume(queue, async (msg) => {
+    const consumeResult = await this.channel.consume(queue, async (msg) => {
       if (!msg) return;
 
-      const attempt = Number(msg.properties.headers?.['x-attempt'] ?? 1);
-      const rawRequestId = msg.properties.headers?.['x-request-id'];
-      const rawTraceId =
-        msg.properties.headers?.['traceparent'] ||
-        msg.properties.headers?.['x-trace-id'];
-
-      const requestId = sanitizeRequestId(
-        typeof rawRequestId === 'string' ? rawRequestId : undefined,
-      );
-      const traceId =
-        typeof rawTraceId === 'string' ? rawTraceId : requestId;
-
-      let parsed: T;
+      this.activeMessageCount++;
       try {
-        parsed = JSON.parse(msg.content.toString('utf-8')) as T;
-      } catch (parseErr) {
-        this.logger.error(
-          `[reqId=${requestId}] 메시지 JSON 파싱 치명적 에러 (즉시 DLQ 전송): ${(parseErr as Error)?.message}`,
-        );
-        // 복구 불가능한 손상 메시지는 재시도 없이 즉시 DLQ(nack)로 전송
-        this.channel?.nack(msg, false, false);
-        return;
-      }
+        const attempt = Number(msg.properties.headers?.['x-attempt'] ?? 1);
+        const rawRequestId = msg.properties.headers?.['x-request-id'];
+        const rawTraceId =
+          msg.properties.headers?.['traceparent'] ||
+          msg.properties.headers?.['x-trace-id'];
 
-      const executeHandler = async () => {
+        const requestId = sanitizeRequestId(
+          typeof rawRequestId === 'string' ? rawRequestId : undefined,
+        );
+        const traceId =
+          typeof rawTraceId === 'string' ? rawTraceId : requestId;
+
+        let parsed: T;
         try {
-          await handler(parsed, msg);
-          this.channel?.ack(msg);
-        } catch (err: unknown) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
+          parsed = JSON.parse(msg.content.toString('utf-8')) as T;
+        } catch (parseErr) {
           this.logger.error(
-            `[reqId=${requestId}] RabbitMQ 메시지 처리 실패 (시도 ${attempt}/3, queue=${queue}): ${errorMsg}`,
+            `[reqId=${requestId}] 메시지 JSON 파싱 치명적 에러 (즉시 DLQ 전송): ${(parseErr as Error)?.message}`,
           );
-
-          if (attempt < 3) {
-            // 일시적 오류 시 5초 지연 재시도 큐로 발행 후 원본 메시지 ack (x-request-id 포함 원본 헤더 유지)
-            const headers = {
-              ...msg.properties.headers,
-              'x-attempt': attempt + 1,
-              'x-request-id': requestId,
-            };
-            this.channel?.sendToQueue(this.retryQueue, msg.content, {
-              persistent: true,
-              headers,
-            });
-            this.channel?.ack(msg);
-          } else {
-            // 최대 재시도(3회) 초과 시 Dead Letter Queue로 라우팅
-            this.logger.warn(
-              `[reqId=${requestId}] 메시지가 최대 재시도 횟수(3회)를 초과하여 DLQ(${this.deadLetterQueue})로 이동합니다.`,
-            );
-            this.channel?.nack(msg, false, false);
-          }
+          // 복구 불가능한 손상 메시지는 재시도 없이 즉시 DLQ(nack)로 전송
+          this.channel?.nack(msg, false, false);
+          return;
         }
-      };
 
-      if (this.traceContextService) {
-        await this.traceContextService.runWithContext(
-          { requestId, traceId },
-          executeHandler,
-        );
-      } else {
-        await executeHandler();
+        const executeHandler = async () => {
+          try {
+            await handler(parsed, msg);
+            this.channel?.ack(msg);
+          } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            this.logger.error(
+              `[reqId=${requestId}] RabbitMQ 메시지 처리 실패 (시도 ${attempt}/3, queue=${queue}): ${errorMsg}`,
+            );
+
+            if (attempt < 3) {
+              // 일시적 오류 시 5초 지연 재시도 큐로 발행 후 원본 메시지 ack (x-request-id 포함 원본 헤더 유지)
+              const headers = {
+                ...msg.properties.headers,
+                'x-attempt': attempt + 1,
+                'x-request-id': requestId,
+              };
+              this.channel?.sendToQueue(this.retryQueue, msg.content, {
+                persistent: true,
+                headers,
+              });
+              this.channel?.ack(msg);
+            } else {
+              // 최대 재시도(3회) 초과 시 Dead Letter Queue로 라우팅
+              this.logger.warn(
+                `[reqId=${requestId}] 메시지가 최대 재시도 횟수(3회)를 초과하여 DLQ(${this.deadLetterQueue})로 이동합니다.`,
+              );
+              this.channel?.nack(msg, false, false);
+            }
+          }
+        };
+
+        if (this.traceContextService) {
+          await this.traceContextService.runWithContext(
+            { requestId, traceId },
+            executeHandler,
+          );
+        } else {
+          await executeHandler();
+        }
+      } finally {
+        this.activeMessageCount--;
       }
     });
 
-    this.logger.log(`RabbitMQ Consumer 등록 및 바인딩 완료: ${queue}`);
+    const consumerTag = consumeResult?.consumerTag;
+    if (consumerTag) {
+      this.activeConsumerTags.set(queue, consumerTag);
+      this.logger.log(`RabbitMQ Consumer 등록 및 바인딩 완료: ${queue} (tag=${consumerTag})`);
+    } else {
+      this.logger.log(`RabbitMQ Consumer 등록 및 바인딩 완료: ${queue}`);
+    }
   }
 
+
+  /**
+   * Graceful Shutdown:
+   * 1. 등록된 모든 Consumer의 consumerTag를 취소하여 신규 메시지 인입 즉시 차단
+   * 2. 현재 처리 중인 in-flight 메시지가 완료될 때까지 대기 (최대 10초 타임아웃)
+   * 3. 채널 및 커넥션 안전하게 종료
+   */
   async disconnect(): Promise<void> {
+    this.isClosing = true;
+
+    // 1. 신규 메시지 인입 차단 (Consumer 취소)
+    if (this.channel && this.activeConsumerTags.size > 0) {
+      for (const [queue, tag] of this.activeConsumerTags.entries()) {
+        try {
+          await this.channel.cancel(tag);
+          this.logger.log(
+            `RabbitMQ Consumer 취소 완료 (신규 메시지 수신 차단): queue=${queue}, tag=${tag}`,
+          );
+        } catch (cancelErr) {
+          this.logger.warn(
+            `RabbitMQ Consumer 취소 실패 (queue=${queue}, tag=${tag}): ${(cancelErr as Error)?.message}`,
+          );
+        }
+      }
+      this.activeConsumerTags.clear();
+    }
+
+    // 2. 처리 중인 메시지 Graceful Drain (최대 10초 대기)
+    if (this.activeMessageCount > 0) {
+      this.logger.log(
+        `진행 중인 RabbitMQ 메시지 드레인 대기 중... (남은 작업: ${this.activeMessageCount}건)`,
+      );
+      const drainTimeoutMs = 10000;
+      const startTime = Date.now();
+      while (
+        this.activeMessageCount > 0 &&
+        Date.now() - startTime < drainTimeoutMs
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      if (this.activeMessageCount > 0) {
+        this.logger.warn(
+          `RabbitMQ 메시지 드레인 타임아웃 초과 (미완료 작업: ${this.activeMessageCount}건)`,
+        );
+      } else {
+        this.logger.log('모든 진행 중인 RabbitMQ 메시지 처리가 정상 완료되었습니다.');
+      }
+    }
+
+    // 3. 채널 및 연결 종료
     try {
       await this.channel?.close();
       await this.connection?.close();
@@ -354,4 +421,19 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   isConnected(): boolean {
     return this.channel !== null;
   }
+
+  getActiveMessageCount(): number {
+    return this.activeMessageCount;
+  }
+
+  getActiveConsumerTags(): ReadonlyMap<string, string> {
+    return this.activeConsumerTags;
+  }
+
+  async checkHealth(): Promise<void> {
+    if (!this.isConnected()) {
+      throw new Error('RabbitMQ 채널이 활성화되어 있지 않습니다');
+    }
+  }
 }
+

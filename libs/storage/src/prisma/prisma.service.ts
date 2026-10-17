@@ -29,4 +29,9 @@ export class PrismaService
     await this.$disconnect();
     this.logger.log('PostgreSQL (Prisma) 연결 종료');
   }
+
+  async checkHealth(): Promise<void> {
+    await this.$queryRawUnsafe('SELECT 1');
+  }
 }
+
