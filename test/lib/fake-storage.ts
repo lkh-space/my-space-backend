@@ -153,9 +153,21 @@ export class FakeQdrantService {
     ownerId: string,
     _vector: number[],
     limit = 5,
-    filterOptions?: { folderId?: string | null; tags?: string[] },
+    filterOptions?: {
+      folderId?: string | null;
+      tags?: string[];
+      embeddingModel?: string;
+    },
   ): Promise<QdrantSearchResult[]> {
     let matched = this.points.filter((p) => p.payload.ownerId === ownerId);
+
+    if (filterOptions?.embeddingModel) {
+      matched = matched.filter(
+        (p) =>
+          !p.payload.embeddingModel ||
+          p.payload.embeddingModel === filterOptions.embeddingModel,
+      );
+    }
 
     if (filterOptions?.folderId !== undefined && filterOptions.folderId !== null) {
       matched = matched.filter((p) => p.payload.folderId === filterOptions.folderId);

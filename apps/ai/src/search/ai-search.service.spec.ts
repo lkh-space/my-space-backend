@@ -13,6 +13,7 @@ describe('AiSearchService (BDD 단위 테스트)', () => {
   beforeEach(() => {
     mockEmbeddingProvider = {
       name: 'gemini',
+      embeddingModel: 'text-embedding-004',
       dimension: 768,
       embedText: vi
         .fn()
@@ -39,6 +40,7 @@ describe('AiSearchService (BDD 단위 테스트)', () => {
             tags: ['nestjs', 'backend'],
             chunkIndex: 0,
             version: 1,
+            embeddingModel: 'text-embedding-004',
           },
         },
       ]),
@@ -61,7 +63,11 @@ describe('AiSearchService (BDD 단위 테스트)', () => {
       ownerId,
       expect.any(Array),
       3,
-      { folderId: undefined, tags: undefined },
+      {
+        folderId: undefined,
+        tags: undefined,
+        embeddingModel: 'text-embedding-004',
+      },
     );
     expect(response.total).toBe(1);
     expect(response.results[0]).toEqual({
@@ -91,7 +97,11 @@ describe('AiSearchService (BDD 단위 테스트)', () => {
       ownerId,
       expect.any(Array),
       5, // 기본 limit
-      { folderId: 'folder-abc', tags: ['guide'] },
+      {
+        folderId: 'folder-abc',
+        tags: ['guide'],
+        embeddingModel: 'text-embedding-004',
+      },
     );
   });
 });

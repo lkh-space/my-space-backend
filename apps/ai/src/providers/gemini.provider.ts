@@ -22,10 +22,10 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('ai.gemini.apiKey', '');
-    this.model = this.configService.get<string>('ai.gemini.model', 'gemini-3.5-flash');
+    this.model = this.configService.get<string>('ai.gemini.model', 'gemini-3.8-flash');
     this.embeddingModel = this.configService.get<string>(
       'ai.gemini.embeddingModel',
-      'gemini-embedding-001',
+      'text-embedding-004',
     );
 
     if (apiKey) {

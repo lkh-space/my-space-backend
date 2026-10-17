@@ -23,10 +23,11 @@ export class AiSearchService {
     // 1. 질의어 768차원 임베딩 생성
     const vector = await embeddingProvider.embedText(dto.query);
 
-    // 2. Qdrant 벡터 검색 (ownerId 격리 필터)
+    // 2. Qdrant 벡터 검색 (ownerId 격리 및 임베딩 모델 일치 필터)
     const points = await this.qdrantService.searchPoints(ownerId, vector, limit, {
       folderId: dto.folderId,
       tags: dto.tags,
+      embeddingModel: embeddingProvider.embeddingModel || embeddingProvider.name,
     });
 
     const results = points.map((p: any) => ({

@@ -134,6 +134,7 @@ export class IndexingConsumerWorker implements OnModuleInit {
           content: chunk.content,
           tags: message.tags,
           folderId: message.folderId,
+          embeddingModel: embeddingProvider.embeddingModel || embeddingProvider.name,
         },
       }));
 

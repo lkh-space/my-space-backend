@@ -185,6 +185,10 @@ export class AiToolsService {
       ownerId,
       queryVector,
       limit,
+      {
+        embeddingModel:
+          embeddingProvider.embeddingModel || embeddingProvider.name,
+      },
     );
 
     if (results.length === 0) {

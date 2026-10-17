@@ -160,6 +160,7 @@ export class FakeLlmProvider implements LlmProvider {
 @Injectable()
 export class FakeEmbeddingProvider implements EmbeddingProvider {
   readonly name = 'fake-embedding';
+  readonly embeddingModel = 'fake-embedding-001';
   readonly dimension = 768;
 
   async embedText(_text: string): Promise<number[]> {

@@ -45,6 +45,7 @@ export interface LlmProvider {
 
 export interface EmbeddingProvider {
   readonly name: string;
+  readonly embeddingModel: string;
   readonly dimension: number;
   embedText(text: string): Promise<number[]>;
   embedBatch(texts: string[]): Promise<number[][]>;

@@ -12,6 +12,7 @@ export interface QdrantPointPayload {
   content: string;
   tags?: string[];
   folderId?: string | null;
+  embeddingModel?: string;
   [key: string]: unknown;
 }
 
@@ -57,7 +58,7 @@ export class QdrantService implements OnModuleInit {
   }
 
   /**
-   * 컬렉션 및 페이로드 키워드 인덱스 자동 보장
+   * 컬렉션 및 페이로드 키워드 인덱스 자동 보장 및 메타데이터 검증
    */
   async ensureCollection(): Promise<void> {
     const { collections } = await this.client.getCollections();
@@ -75,7 +76,7 @@ export class QdrantService implements OnModuleInit {
       });
 
       // 빠른 필터링을 위한 페이로드 키워드 인덱스 생성
-      const indexFields = ['ownerId', 'documentId', 'tags', 'folderId'];
+      const indexFields = ['ownerId', 'documentId', 'tags', 'folderId', 'embeddingModel'];
       for (const field_name of indexFields) {
         try {
           await this.client.createPayloadIndex(this.collectionName, {
@@ -85,6 +86,29 @@ export class QdrantService implements OnModuleInit {
         } catch {
           // 인덱스 생성 에러는 무시
         }
+      }
+    } else {
+      // 기존 컬렉션의 벡터 차원 및 거리 함수 검증 (M-11)
+      try {
+        const info = await this.client.getCollection(this.collectionName);
+        const vectorsConfig = info.config?.params?.vectors;
+        if (vectorsConfig && typeof vectorsConfig === 'object') {
+          const size = 'size' in vectorsConfig ? (vectorsConfig as Record<string, unknown>).size : undefined;
+          const distance = 'distance' in vectorsConfig ? (vectorsConfig as Record<string, unknown>).distance : undefined;
+          if (size !== undefined && size !== this.vectorDimension) {
+            this.logger.error(
+              `[QdrantService] 컬렉션 '${this.collectionName}'의 벡터 차원(${size})이 시스템 설정(${this.vectorDimension})과 불일치합니다!`,
+            );
+          }
+          if (distance !== undefined && distance !== 'Cosine') {
+            this.logger.warn(
+              `[QdrantService] 컬렉션 '${this.collectionName}'의 거리 함수(${distance})가 'Cosine'이 아닙니다.`,
+            );
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`[QdrantService] 기존 컬렉션 메타데이터 검증 실패: ${message}`);
       }
     }
   }
@@ -211,11 +235,22 @@ export class QdrantService implements OnModuleInit {
     ownerId: string,
     vector: number[],
     limit = 5,
-    filterOptions?: { folderId?: string | null; tags?: string[] },
+    filterOptions?: {
+      folderId?: string | null;
+      tags?: string[];
+      embeddingModel?: string;
+    },
   ): Promise<QdrantSearchResult[]> {
     const mustFilters: Array<Record<string, unknown>> = [
       { key: 'ownerId', match: { value: ownerId } },
     ];
+
+    if (filterOptions?.embeddingModel) {
+      mustFilters.push({
+        key: 'embeddingModel',
+        match: { value: filterOptions.embeddingModel },
+      });
+    }
 
     if (filterOptions?.folderId) {
       mustFilters.push({ key: 'folderId', match: { value: filterOptions.folderId } });

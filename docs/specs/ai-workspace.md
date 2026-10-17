@@ -83,6 +83,11 @@ last-updated: 2026-10-06
   * **Provider 시스템 프롬프트 분리 주입**: LLM Provider(Gemini 등) 호출 시 `role === 'system'` 메시지를 대화 본문(`contents`)의 `user` role로 치환하지 않고 최상위 `systemInstruction` 필드로 분리 전달하여 보안 지침의 우선순위와 격리를 보장한다.
   * **도구 인자 Zod 검증 및 상한 강제**: AI가 호출하는 도구의 인자(`query`, `limit`, `documentId`, `title`, `content` 등)는 사전에 정의된 Zod 스키마로 엄격히 검증하며, 특히 `search_my_documents`의 `limit`은 1~10으로 강제 제한하여 과도한 벡터 조회를 차단한다.
   * **문서 원문 절단 및 XML 속성 이스케이프**: `read_document` 도구 호출 시 문서 본문은 최대 10,000자로 절단(truncate)하여 컨텍스트 윈도우 폭증을 방지하고, 문서 제목 및 ID는 특수문자/태그 탈출 문자(`"`, `<`, `>`, `&`, `'`)를 XML Entity로 안전하게 이스케이프하여 컨텍스트 경계 태그 탈출을 원천 방지한다.
+* **`BR-A10` (임베딩 모델 공간 격리 및 설정 기본값 단일 소스화)**:
+  * **설정 기본값 단일 소스화(SSOT)**: Gemini 및 Ollama의 모델 기본값(`GEMINI_MODEL=gemini-3.8-flash`, `GEMINI_EMBEDDING_MODEL=text-embedding-004` 등)은 `libs/config` 한 곳에서만 일관되게 정의하며, 프로바이더와 환경변수 검증 스키마 간 불일치를 원천 차단한다.
+  * **페이로드 모델 식별자 저장**: 문서 인덱싱(`INDEX`) 시 생성된 포인트 페이로드에 임베딩을 수행한 모델 식별자(`embeddingModel`)를 필수 저장하고, 키워드 인덱스를 생성하여 조회 성능을 보장한다.
+  * **검색 벡터 공간 격리 필터**: 시맨틱 검색(`POST /api/v1/ai/search` 및 `search_my_documents`) 시 질의어를 임베딩한 모델(`embeddingModel`)을 Qdrant 검색 필터(`must`)에 강제 포함하여, 서로 다른 임베딩 모델(예: text-embedding-004 vs nomic-embed-text)의 벡터가 동일 컬렉션 내에 공존하더라도 상이한 벡터 공간이 혼재되어 검색 품질이 붕괴하는 현상을 원천 방지한다.
+  * **컬렉션 차원 및 거리 함수 런타임 검증**: Qdrant 초기화(`ensureCollection`) 시 기존 컬렉션의 벡터 차원(`size=768`) 및 거리 함수(`distance=Cosine`)를 검증하여 불일치 시 명확한 에러 로그를 남기고 비정상 색인을 방지한다.
 
 ---
 
