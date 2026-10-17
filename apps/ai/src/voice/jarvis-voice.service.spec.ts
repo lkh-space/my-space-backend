@@ -198,7 +198,7 @@ describe('JarvisVoiceService (BDD 단위 테스트)', () => {
       async function* mockLongStream() {
         yield '첫 번째 문장입니다. ';
         // 스트리밍 도중 인터럽트 발생
-        service.interrupt(session.id);
+        await service.interrupt(ownerId, session.id);
         yield '이 문장은 전달되지 않거나 중단되어야 합니다.';
       }
       vi.spyOn(mockLlmProvider, 'stream').mockImplementation(mockLongStream as any);
@@ -225,20 +225,44 @@ describe('JarvisVoiceService (BDD 단위 테스트)', () => {
       expect(doneData.finished).toBe(true);
       expect(doneData.interrupted).toBe(true);
     });
+
+    it('타인 소유의 세션 ID로 interrupt 호출 시 SessionNotFoundException이 발생해야 한다 (IDOR 방어)', async () => {
+      // given
+      const session = await sessionService.createSession('victim-user', {
+        title: 'Victim Session',
+      });
+
+      // when & then: attacker-user가 피해자의 세션을 인터럽트 시도
+      await expect(
+        service.interrupt('attacker-user', session.id),
+      ).rejects.toThrow(SessionNotFoundException);
+    });
   });
 
   describe('오디오 버퍼 조회 (getAudioBuffer)', () => {
     it('저장된 오디오 ID로 버퍼를 정상 반환해야 한다', () => {
       // given
       const buffer = Buffer.from('saved-wav-data');
-      const audioId = audioStore.saveAudio(buffer, 'wav', 'audio/wav');
+      const audioId = audioStore.saveAudio('user-jarvis', buffer, 'wav', 'audio/wav');
 
       // when
-      const result = service.getAudioBuffer(`${audioId}.wav`);
+      const result = service.getAudioBuffer(`${audioId}.wav`, 'user-jarvis');
 
       // then
       expect(result).not.toBeNull();
       expect(result?.buffer).toEqual(buffer);
+    });
+
+    it('타인이 오디오 버퍼 조회 시 null을 반환해야 한다 (소유권 격리)', () => {
+      // given
+      const buffer = Buffer.from('private-audio-data');
+      const audioId = audioStore.saveAudio('owner-alice', buffer, 'wav', 'audio/wav');
+
+      // when
+      const result = service.getAudioBuffer(`${audioId}.wav`, 'attacker-bob');
+
+      // then
+      expect(result).toBeNull();
     });
   });
 });

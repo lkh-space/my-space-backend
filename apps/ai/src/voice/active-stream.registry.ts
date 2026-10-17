@@ -64,10 +64,25 @@ export class ActiveStreamRegistry {
 
   /**
    * 스트림 정상 완료 후 레지스트리에서 제거
+   * controller가 전달되면 자신이 등록한 엔트리와 일치할 때만 해제하여 후속 스트림 오삭제 방지
+   * @returns 엔트리가 실제로 해제되었으면 true, 다른 스트림이 이미 등록되었으면 false
    */
-  unregisterStream(sessionId: string): void {
+  unregisterStream(sessionId: string, controller?: AbortController): boolean {
+    const entry = this.activeStreams.get(sessionId);
+    if (!entry) {
+      return false;
+    }
+
+    if (controller && entry.abortController !== controller) {
+      this.logger.debug(
+        `[StreamRegistry] 신규 활성 스트림이 이미 등록되어 있어 이전 스트림의 해제를 건너뜁니다: 세션 ${sessionId}`,
+      );
+      return false;
+    }
+
     this.activeStreams.delete(sessionId);
     this.logger.debug(`[StreamRegistry] 스트림 정상 해제: 세션 ${sessionId}`);
+    return true;
   }
 
   /**

@@ -4,18 +4,21 @@ import type {
   EmbeddingProvider,
   LlmMessage,
   LlmResponse,
+  LlmStreamChunk,
   LlmToolDefinition,
 } from '../../apps/ai/src/providers/llm.provider.interface.js';
 
 export type MockGenerateFn = (
   messages: LlmMessage[],
   tools?: LlmToolDefinition[],
+  signal?: AbortSignal,
 ) => Promise<LlmResponse>;
 
 export type MockStreamFn = (
   messages: LlmMessage[],
   tools?: LlmToolDefinition[],
-) => AsyncGenerator<string, void, unknown>;
+  signal?: AbortSignal,
+) => AsyncGenerator<LlmStreamChunk | string, void, unknown>;
 
 @Injectable()
 export class FakeLlmProvider implements LlmProvider {
@@ -94,15 +97,63 @@ export class FakeLlmProvider implements LlmProvider {
   async *stream(
     messages: LlmMessage[],
     tools?: LlmToolDefinition[],
-  ): AsyncGenerator<string, void, unknown> {
+    signal?: AbortSignal,
+  ): AsyncGenerator<LlmStreamChunk, void, unknown> {
     if (this.customStreamFn) {
-      yield* this.customStreamFn(messages, tools);
+      for await (const chunk of this.customStreamFn(messages, tools, signal)) {
+        if (typeof chunk === 'string') {
+          yield { text: chunk };
+        } else {
+          yield chunk;
+        }
+      }
       return;
     }
 
-    yield '안녕하세요! ';
-    yield '모의 AI 스트리밍 ';
-    yield '답변입니다.';
+    const lastMessage = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+
+    // 도구 실행 결과가 이미 포함된 경우 -> 최종 답변 반환
+    const hasToolResult = messages.some((m) => m.content.includes('도구') && m.content.includes('결과:'));
+    if (hasToolResult) {
+      yield { text: '도구 검색 결과를 바탕으로 답변을 완성했습니다.' };
+      return;
+    }
+
+    // 도구 호출 모의 트리거: 메시지에 '검색'이 포함된 경우
+    if (tools && lastMessage.includes('검색')) {
+      yield {
+        toolCalls: [
+          {
+            id: 'call_search_1',
+            name: 'search_my_documents',
+            args: { query: 'NestJS' },
+          },
+        ],
+      };
+      return;
+    }
+
+    // 도구 호출 모의 트리거: 메시지에 '저장'이 포함된 경우
+    if (tools && lastMessage.includes('저장')) {
+      yield {
+        toolCalls: [
+          {
+            id: 'call_save_1',
+            name: 'save_to_markdown',
+            args: {
+              title: '자동 저장된 AI 문서',
+              content: '# AI 요약 노트\n본문 내용입니다.',
+              tags: ['ai', 'note'],
+            },
+          },
+        ],
+      };
+      return;
+    }
+
+    yield { text: '안녕하세요! ' };
+    yield { text: '모의 AI 스트리밍 ' };
+    yield { text: '답변입니다.' };
   }
 }
 

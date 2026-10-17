@@ -221,14 +221,15 @@ export class JarvisVoiceService {
         return;
       }
 
-      // 7. TTS 음성 합성 및 audio_complete 발행
-      if (fullAnswer.trim().length > 0) {
+      // 7. TTS 음성 합성 및 audio_complete 발행 (취소되지 않은 경우에만 실행)
+      if (!abortController.signal.aborted && fullAnswer.trim().length > 0) {
         try {
           const ttsResult = await this.ttsProvider.synthesize(
             fullAnswer,
             dto.voiceSettings,
           );
           const audioId = this.audioStore.saveAudio(
+            ownerId,
             ttsResult.audioBuffer,
             ttsResult.format,
             ttsResult.mimeType,
@@ -257,26 +258,36 @@ export class JarvisVoiceService {
         }),
       };
     } finally {
-      // 세션 상태 원복 및 스트림 레지스트리 해제
-      await this.sessionService.updateSessionStatus(sessionId, 'idle');
-      this.streamRegistry.unregisterStream(sessionId);
+      // 세션 상태 원복 및 스트림 레지스트리 안전 해제 (자신의 스트림일 때만 idle 원복)
+      const isUnregistered = this.streamRegistry.unregisterStream(
+        sessionId,
+        abortController,
+      );
+      if (isUnregistered) {
+        await this.sessionService.updateSessionStatus(sessionId, 'idle');
+      }
     }
   }
 
   /**
-   * 발화 중단 (Interrupt) 처리
+   * 발화 중단 (Interrupt) 처리 (소유권 선행 검증으로 IDOR 방어)
    */
-  interrupt(sessionId: string): { interrupted: boolean } {
+  async interrupt(
+    ownerId: string,
+    sessionId: string,
+  ): Promise<{ interrupted: boolean }> {
+    // 세션 존재 및 소유권 선행 검증 (타인 소유 시 SessionNotFoundException 발생)
+    await this.sessionService.getSession(ownerId, sessionId);
     const interrupted = this.streamRegistry.interruptStream(sessionId);
     return { interrupted };
   }
 
   /**
-   * 합성 완료된 오디오 버퍼 조회
+   * 합성 완료된 오디오 버퍼 조회 (소유권 검증 지원)
    */
-  getAudioBuffer(audioId: string) {
+  getAudioBuffer(audioId: string, ownerId?: string) {
     // 확장자(.wav, .opus 등)가 붙어있는 경우 제거
     const cleanId = audioId.replace(/\.[^/.]+$/, '');
-    return this.audioStore.getAudio(cleanId);
+    return this.audioStore.getAudio(cleanId, ownerId);
   }
 }

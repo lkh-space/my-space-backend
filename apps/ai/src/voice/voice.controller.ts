@@ -273,10 +273,13 @@ export class VoiceController {
     description: '중단 신호 처리 성공',
   })
   async interrupt(
-    @CurrentUser() _user: AuthUser,
+    @CurrentUser() user: AuthUser,
     @Body() dto: InterruptQueryDto,
   ): Promise<{ status: string; interrupted: boolean }> {
-    const { interrupted } = this.voiceService.interrupt(dto.sessionId);
+    const { interrupted } = await this.voiceService.interrupt(
+      user.username,
+      dto.sessionId,
+    );
     return { status: 'ok', interrupted };
   }
 
@@ -287,10 +290,11 @@ export class VoiceController {
   })
   @ApiParam({ name: 'id', description: '오디오 ID (예: speech-xxx.wav)' })
   async getAudio(
+    @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Res() res: Response,
   ): Promise<void> {
-    const entry = this.voiceService.getAudioBuffer(id);
+    const entry = this.voiceService.getAudioBuffer(id, user.username);
     if (!entry) {
       throw new AudioFileNotFoundException(id);
     }
@@ -298,7 +302,7 @@ export class VoiceController {
     res.status(HttpStatus.OK);
     res.setHeader('Content-Type', entry.mimeType);
     res.setHeader('Content-Length', entry.buffer.length);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(entry.buffer);
   }
 }

@@ -66,9 +66,31 @@ describe('ActiveStreamRegistry', () => {
     registry.registerStream(sessionId);
 
     // when
-    registry.unregisterStream(sessionId);
+    const result = registry.unregisterStream(sessionId);
 
     // then
+    expect(result).toBe(true);
+    expect(registry.getActiveStreamCount()).toBe(0);
+  });
+
+  it('신규 스트림이 등록된 상태에서 이전 스트림의 controller로 unregisterStream을 호출하면 신규 스트림을 삭제하지 않아야 한다 (경쟁 조건 방어)', () => {
+    // given
+    const sessionId = 'session-123';
+    const firstController = registry.registerStream(sessionId);
+    const secondController = registry.registerStream(sessionId);
+
+    // when: 이전 스트림 A가 종료되며 자신의 controller로 unregisterStream 호출
+    const result = registry.unregisterStream(sessionId, firstController);
+
+    // then: 이전 스트림에 의한 해제는 무시되고 신규 스트림 B의 엔트리가 보존되어야 함
+    expect(result).toBe(false);
+    expect(registry.getActiveStreamCount()).toBe(1);
+
+    // 신규 스트림 B는 여전히 인터럽트 가능해야 함
+    expect(secondController.signal.aborted).toBe(false);
+    const interruptResult = registry.interruptStream(sessionId);
+    expect(interruptResult).toBe(true);
+    expect(secondController.signal.aborted).toBe(true);
     expect(registry.getActiveStreamCount()).toBe(0);
   });
 });

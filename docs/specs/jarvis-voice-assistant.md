@@ -69,6 +69,11 @@ last-updated: 2026-10-09
   - TTS 실패 시 텍스트 답변(`token`)은 정상 수신되도록 하며, `audio_complete` 생략 후 `done`으로 안전하게 스트림을 마무리한다.
 * **`BR-J06` (오디오 버퍼 TTL 만료)**:
   - 합성된 오디오 파일은 메모리 또는 임시 디렉토리에 캐싱되며, 생성 후 1시간(기본 TTL)이 경과하면 자동 폐기된다.
+* **`BR-J07` (스트림 레지스트리 경쟁 조건 방어, IDOR 차단 및 오디오 버퍼 100MB LRU 상한 관리)**:
+  - `ActiveStreamRegistry`는 `unregisterStream(sessionId, controller)` 호출 시 전달된 `controller` 인스턴스가 현재 등록된 스트림과 일치할 때만 엔트리를 해제하여, 신규 스트림 등록 후 이전 스트림의 `finally`가 신규 엔트리를 삭제하는 경쟁 조건을 방지한다.
+  - 스트림 종료 시 자신의 엔트리가 정상 해제된 경우에만 세션 상태를 `idle`로 복원하며, 새 스트림이 실행 중일 때는 세션 상태를 덮어쓰지 않는다.
+  - 인터럽트(`POST /api/v1/ai/chat/interrupt`) 및 오디오 조회(`GET /api/v1/ai/audio/:id`) 시 요청자 `ownerId` 검증을 선행하여 IDOR 공격을 차단한다.
+  - `AudioBufferStore`는 총 오디오 바이트 상한(100MB)을 유지하고, 초과 시 가장 오래된 엔트리부터 자동 폐기(LRU Eviction)하며, `Cache-Control: private, max-age=3600` 헤더를 통해 공유 캐시 누출을 방지한다.
 
 ---
 

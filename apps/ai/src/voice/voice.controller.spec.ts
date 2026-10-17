@@ -112,9 +112,9 @@ describe('VoiceController (BDD 단위 테스트)', () => {
   });
 
   describe('발화 즉시 중단 (interrupt)', () => {
-    it('세션 ID로 interrupt 호출 시 중단 성공 결과를 반환해야 한다', async () => {
+    it('세션 ID와 소유자 정보를 전달하여 interrupt 호출 시 중단 성공 결과를 반환해야 한다', async () => {
       // given
-      vi.spyOn(mockVoiceService, 'interrupt').mockReturnValue({
+      vi.spyOn(mockVoiceService, 'interrupt').mockResolvedValue({
         interrupted: true,
       });
       const dto = { sessionId: 'session-123' };
@@ -123,17 +123,18 @@ describe('VoiceController (BDD 단위 테스트)', () => {
       const result = await controller.interrupt(mockUser, dto);
 
       // then
-      expect(mockVoiceService.interrupt).toHaveBeenCalledWith('session-123');
+      expect(mockVoiceService.interrupt).toHaveBeenCalledWith('dev-admin', 'session-123');
       expect(result).toEqual({ status: 'ok', interrupted: true });
     });
   });
 
   describe('오디오 다운로드 (getAudio)', () => {
-    it('존재하는 오디오 ID 요청 시 버퍼와 Content-Type을 전송해야 한다', async () => {
+    it('존재하는 오디오 ID 요청 시 소유자 확인 후 버퍼와 private 캐시 헤더를 전송해야 한다', async () => {
       // given
       const sampleBuffer = Buffer.from('riff-audio');
       vi.spyOn(mockVoiceService, 'getAudioBuffer').mockReturnValue({
         id: 'speech-1',
+        ownerId: 'dev-admin',
         buffer: sampleBuffer,
         format: 'wav',
         mimeType: 'audio/wav',
@@ -148,24 +149,32 @@ describe('VoiceController (BDD 단위 테스트)', () => {
       } as unknown as Response;
 
       // when
-      await controller.getAudio('speech-1.wav', mockRes);
+      await controller.getAudio(mockUser, 'speech-1.wav', mockRes);
 
       // then
+      expect(mockVoiceService.getAudioBuffer).toHaveBeenCalledWith(
+        'speech-1.wav',
+        'dev-admin',
+      );
       expect(mockRes.setHeader).toHaveBeenCalledWith(
         'Content-Type',
         'audio/wav',
       );
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'Cache-Control',
+        'private, max-age=3600',
+      );
       expect(mockRes.send).toHaveBeenCalledWith(sampleBuffer);
     });
 
-    it('존재하지 않는 오디오 ID 요청 시 AudioFileNotFoundException이 발생해야 한다', async () => {
+    it('존재하지 않거나 타인 소유의 오디오 ID 요청 시 AudioFileNotFoundException이 발생해야 한다', async () => {
       // given
       vi.spyOn(mockVoiceService, 'getAudioBuffer').mockReturnValue(null);
       const mockRes = {} as unknown as Response;
 
       // when & then
       await expect(
-        controller.getAudio('non-existent.wav', mockRes),
+        controller.getAudio(mockUser, 'non-existent.wav', mockRes),
       ).rejects.toThrow(AudioFileNotFoundException);
     });
   });
