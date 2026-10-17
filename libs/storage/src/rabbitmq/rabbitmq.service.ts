@@ -1,6 +1,7 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import amqp, { type Channel, type ChannelModel, type ConsumeMessage } from 'amqplib';
+import { TraceContextService, sanitizeRequestId } from '@app/common';
 
 export interface DocumentIndexEvent {
   type: 'INDEX';
@@ -45,7 +46,10 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   // 재연결 시 자동 재등록할 Consumer 목록
   private readonly registeredConsumers = new Map<string, RegisteredConsumer>();
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() private readonly traceContextService?: TraceContextService,
+  ) {
     this.url = this.configService.get<string>(
       'rabbitmq.url',
       'amqp://localhost:5672',
@@ -191,9 +195,13 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 큐에 메시지 안전하게 발행
+   * 큐에 메시지 안전하게 발행 (분산 추적 헤더 x-request-id, traceparent 자동 전파)
    */
-  async publish(queue: string, message: unknown): Promise<boolean> {
+  async publish(
+    queue: string,
+    message: unknown,
+    options?: { headers?: Record<string, unknown> },
+  ): Promise<boolean> {
     if (!this.channel) {
       this.logger.warn(
         `RabbitMQ 채널이 활성화되어 있지 않아 메시지를 발행할 수 없습니다: ${queue}`,
@@ -203,11 +211,21 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const buffer = Buffer.from(JSON.stringify(message));
+      const currentRequestId = this.traceContextService?.getRequestId();
+      const currentTraceId = this.traceContextService?.getTraceId();
+
+      const headers: Record<string, unknown> = {
+        'x-attempt': 1,
+        ...(currentRequestId ? { 'x-request-id': currentRequestId } : {}),
+        ...(currentTraceId
+          ? { traceparent: currentTraceId, 'x-trace-id': currentTraceId }
+          : {}),
+        ...options?.headers,
+      };
+
       const sent = this.channel.sendToQueue(queue, buffer, {
         persistent: true,
-        headers: {
-          'x-attempt': 1,
-        },
+        headers,
       });
 
       if (!sent) {
@@ -239,6 +257,7 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 채널에 Consumer 바인딩 및 재시도/DLQ 분기 처리
+   * 수신된 메시지의 x-request-id 및 traceId를 복원하여 TraceContext 범위 내에서 핸들러를 실행합니다.
    */
   private async bindConsumer<T>(
     queue: string,
@@ -252,42 +271,68 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
       if (!msg) return;
 
       const attempt = Number(msg.properties.headers?.['x-attempt'] ?? 1);
+      const rawRequestId = msg.properties.headers?.['x-request-id'];
+      const rawTraceId =
+        msg.properties.headers?.['traceparent'] ||
+        msg.properties.headers?.['x-trace-id'];
+
+      const requestId = sanitizeRequestId(
+        typeof rawRequestId === 'string' ? rawRequestId : undefined,
+      );
+      const traceId =
+        typeof rawTraceId === 'string' ? rawTraceId : requestId;
+
       let parsed: T;
       try {
         parsed = JSON.parse(msg.content.toString('utf-8')) as T;
       } catch (parseErr) {
         this.logger.error(
-          `메시지 JSON 파싱 치명적 에러 (즉시 DLQ 전송): ${(parseErr as Error)?.message}`,
+          `[reqId=${requestId}] 메시지 JSON 파싱 치명적 에러 (즉시 DLQ 전송): ${(parseErr as Error)?.message}`,
         );
         // 복구 불가능한 손상 메시지는 재시도 없이 즉시 DLQ(nack)로 전송
         this.channel?.nack(msg, false, false);
         return;
       }
 
-      try {
-        await handler(parsed, msg);
-        this.channel?.ack(msg);
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `RabbitMQ 메시지 처리 실패 (시도 ${attempt}/3, queue=${queue}): ${errorMsg}`,
-        );
-
-        if (attempt < 3) {
-          // 일시적 오류 시 5초 지연 재시도 큐로 발행 후 원본 메시지 ack
-          const headers = { ...msg.properties.headers, 'x-attempt': attempt + 1 };
-          this.channel?.sendToQueue(this.retryQueue, msg.content, {
-            persistent: true,
-            headers,
-          });
+      const executeHandler = async () => {
+        try {
+          await handler(parsed, msg);
           this.channel?.ack(msg);
-        } else {
-          // 최대 재시도(3회) 초과 시 Dead Letter Queue로 라우팅
-          this.logger.warn(
-            `메시지가 최대 재시도 횟수(3회)를 초과하여 DLQ(${this.deadLetterQueue})로 이동합니다.`,
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          this.logger.error(
+            `[reqId=${requestId}] RabbitMQ 메시지 처리 실패 (시도 ${attempt}/3, queue=${queue}): ${errorMsg}`,
           );
-          this.channel?.nack(msg, false, false);
+
+          if (attempt < 3) {
+            // 일시적 오류 시 5초 지연 재시도 큐로 발행 후 원본 메시지 ack (x-request-id 포함 원본 헤더 유지)
+            const headers = {
+              ...msg.properties.headers,
+              'x-attempt': attempt + 1,
+              'x-request-id': requestId,
+            };
+            this.channel?.sendToQueue(this.retryQueue, msg.content, {
+              persistent: true,
+              headers,
+            });
+            this.channel?.ack(msg);
+          } else {
+            // 최대 재시도(3회) 초과 시 Dead Letter Queue로 라우팅
+            this.logger.warn(
+              `[reqId=${requestId}] 메시지가 최대 재시도 횟수(3회)를 초과하여 DLQ(${this.deadLetterQueue})로 이동합니다.`,
+            );
+            this.channel?.nack(msg, false, false);
+          }
         }
+      };
+
+      if (this.traceContextService) {
+        await this.traceContextService.runWithContext(
+          { requestId, traceId },
+          executeHandler,
+        );
+      } else {
+        await executeHandler();
       }
     });
 

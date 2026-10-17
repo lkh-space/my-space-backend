@@ -1,10 +1,11 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Optional } from '@nestjs/common';
 import { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { ProviderFactory } from '../providers/provider.factory.js';
 import { MarkdownChunker } from '../utils/markdown-chunker.js';
 import { generateDeterministicChunkId } from '../utils/uuid-v5.js';
+import { TraceContextService } from '@app/common';
 
 interface IndexEvent {
   type: 'INDEX';
@@ -36,7 +37,13 @@ export class IndexingConsumerWorker implements OnModuleInit {
     private readonly qdrantService: QdrantService,
     private readonly minioService: MinioService,
     private readonly providerFactory: ProviderFactory,
+    @Optional() private readonly traceContextService?: TraceContextService,
   ) {}
+
+  private getLogPrefix(): string {
+    const reqId = this.traceContextService?.getRequestId();
+    return reqId ? `[reqId=${reqId}] ` : '';
+  }
 
   async onModuleInit(): Promise<void> {
     await this.startConsumer();
@@ -57,9 +64,11 @@ export class IndexingConsumerWorker implements OnModuleInit {
   }
 
   async handleMessage(message: IndexingMessage): Promise<void> {
+    const prefix = this.getLogPrefix();
+
     if (message.type === 'DELETE') {
       this.logger.log(
-        `[IndexingWorker] 문서 벡터 색인 삭제 처리 (docId=${message.documentId}, owner=${message.ownerId})`,
+        `${prefix}[IndexingWorker] 문서 벡터 색인 삭제 처리 (docId=${message.documentId}, owner=${message.ownerId})`,
       );
       await this.qdrantService.deletePointsByDocument(
         message.ownerId,
@@ -70,7 +79,7 @@ export class IndexingConsumerWorker implements OnModuleInit {
 
     if (message.type === 'INDEX') {
       this.logger.log(
-        `[IndexingWorker] 문서 벡터 색인 생성/갱신 처리 (docId=${message.documentId}, owner=${message.ownerId}, ver=${message.version})`,
+        `${prefix}[IndexingWorker] 문서 벡터 색인 생성/갱신 처리 (docId=${message.documentId}, owner=${message.ownerId}, ver=${message.version})`,
       );
 
       // 1. 오래된 이벤트(Out-of-order 메시지) 덮어쓰기 방어
@@ -81,7 +90,7 @@ export class IndexingConsumerWorker implements OnModuleInit {
         );
       if (latestIndexedVersion !== null && latestIndexedVersion > message.version) {
         this.logger.warn(
-          `[IndexingWorker] 이미 더 최신 버전(v${latestIndexedVersion})이 색인되어 있어 구버전(v${message.version}) 이벤트를 무시합니다. (docId=${message.documentId})`,
+          `${prefix}[IndexingWorker] 이미 더 최신 버전(v${latestIndexedVersion})이 색인되어 있어 구버전(v${message.version}) 이벤트를 무시합니다. (docId=${message.documentId})`,
         );
         return;
       }
@@ -98,7 +107,7 @@ export class IndexingConsumerWorker implements OnModuleInit {
         );
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`MinIO 원문 로드 실패 (${objectKey}): ${errorMsg}`);
+        this.logger.error(`${prefix}MinIO 원문 로드 실패 (${objectKey}): ${errorMsg}`);
         // 재시도 큐 및 DLQ 처리를 위해 에러를 상위로 전파
         throw new Error(`MinIO 원문 파일 조회 실패 (${objectKey}): ${errorMsg}`);
       }
@@ -106,7 +115,7 @@ export class IndexingConsumerWorker implements OnModuleInit {
       // 3. 마크다운 청킹
       const chunks = MarkdownChunker.chunk(rawMarkdown);
       if (chunks.length === 0) {
-        this.logger.log(`[IndexingWorker] 청킹 결과 빈 내용 (docId=${message.documentId})`);
+        this.logger.log(`${prefix}[IndexingWorker] 청킹 결과 빈 내용 (docId=${message.documentId})`);
         return;
       }
 
@@ -149,7 +158,7 @@ export class IndexingConsumerWorker implements OnModuleInit {
       );
 
       this.logger.log(
-        `[IndexingWorker] Qdrant 벡터 색인 완료 (Zero-downtime) [docId=${message.documentId}, 청크=${points.length}개, ver=${message.version}]`,
+        `${prefix}[IndexingWorker] Qdrant 벡터 색인 완료 (Zero-downtime) [docId=${message.documentId}, 청크=${points.length}개, ver=${message.version}]`,
       );
     }
   }

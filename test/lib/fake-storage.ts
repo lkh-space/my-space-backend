@@ -78,7 +78,11 @@ export class FakeOpenSearchService {
 export class FakeRabbitmqService {
   readonly indexingQueue = 'markdown-indexing-queue';
 
-  async publish(_queue: string, _message: unknown): Promise<boolean> {
+  async publish(
+    _queue: string,
+    _message: unknown,
+    _options?: { headers?: Record<string, unknown> },
+  ): Promise<boolean> {
     return true;
   }
 

@@ -216,4 +216,41 @@ describe('IndexingConsumerWorker (인덱싱 워커 H-4 멱등성 및 원자적 �
       );
     });
   });
+
+  describe('분산 추적 (Distributed Tracing) 연동', () => {
+    it('TraceContextService에 requestId가 설정되어 있으면 로그 메시지에 [reqId=...] 접두사가 포함되어야 한다', async () => {
+      // given
+      const { TraceContextService } = await import('@app/common');
+      const traceContextService = new TraceContextService();
+      const tracingWorker = new IndexingConsumerWorker(
+        rabbitmqService,
+        qdrantService,
+        minioService,
+        providerFactory,
+        traceContextService,
+      );
+
+      const logSpy = vi.spyOn((tracingWorker as any).logger, 'log');
+
+      const message = {
+        type: 'DELETE' as const,
+        documentId: 'doc-trace-del',
+        ownerId: 'user-trace',
+        timestamp: new Date().toISOString(),
+      };
+
+      // when: 활성화된 TraceContext 내에서 메시지 처리
+      await traceContextService.runWithContext(
+        { requestId: 'http-req-trace-555' },
+        async () => {
+          await tracingWorker.handleMessage(message);
+        },
+      );
+
+      // then
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[reqId=http-req-trace-555]'),
+      );
+    });
+  });
 });

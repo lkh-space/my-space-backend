@@ -12,4 +12,6 @@ export * from './markdown/safe-matter.js';
 export * from './markdown/unsafe-frontmatter.exception.js';
 export * from './exceptions/folder-not-found.exception.js';
 export * from './core/core-http.module.js';
+export * from './context/trace-context.service.js';
+export * from './context/trace-context.middleware.js';
 

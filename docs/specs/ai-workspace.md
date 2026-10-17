@@ -88,6 +88,11 @@ last-updated: 2026-10-06
   * **페이로드 모델 식별자 저장**: 문서 인덱싱(`INDEX`) 시 생성된 포인트 페이로드에 임베딩을 수행한 모델 식별자(`embeddingModel`)를 필수 저장하고, 키워드 인덱스를 생성하여 조회 성능을 보장한다.
   * **검색 벡터 공간 격리 필터**: 시맨틱 검색(`POST /api/v1/ai/search` 및 `search_my_documents`) 시 질의어를 임베딩한 모델(`embeddingModel`)을 Qdrant 검색 필터(`must`)에 강제 포함하여, 서로 다른 임베딩 모델(예: text-embedding-004 vs nomic-embed-text)의 벡터가 동일 컬렉션 내에 공존하더라도 상이한 벡터 공간이 혼재되어 검색 품질이 붕괴하는 현상을 원천 방지한다.
   * **컬렉션 차원 및 거리 함수 런타임 검증**: Qdrant 초기화(`ensureCollection`) 시 기존 컬렉션의 벡터 차원(`size=768`) 및 거리 함수(`distance=Cosine`)를 검증하여 불일치 시 명확한 에러 로그를 남기고 비정상 색인을 방지한다.
+* **`BR-A11` (분산 추적 헤더 전파 및 요청 ID 위조 방지)**:
+  * **요청 ID 정제 및 로그 주입 차단**: 클라이언트가 전송한 `x-request-id` 헤더는 `/^[\w-]{1,64}$/` 정규식으로 엄격히 검증하며, 개행 문자(`\r\n`), 공백, 특수문자 또는 64자 초과 값이 감지될 경우 새 UUID v4로 대체하여 로그 위조(Log Forgery/Log Injection)를 원천 차단한다.
+  * **비동기 추적 컨텍스트 전파 (`TraceContextService`)**: Node.js `AsyncLocalStorage`를 기반으로 HTTP 요청 수신부터 서비스 처리, 비동기 이벤트 발행까지 동일한 `requestId` 및 `traceId`를 비동기 컨텍스트로 유지한다.
+  * **메시지 큐 헤더 전파 및 워커 로그 상관**: RabbitMQ 이벤트 발행 시 메시지 헤더(`x-request-id`, `traceparent`)에 현재 `requestId`를 자동 주입하며, AI 인덱싱 워커(`IndexingConsumerWorker`)에서 메시지 소비 시 이를 복원하여 워커 로그에 `[reqId=...]` 접두사로 기록함으로써 분산 추적 단절을 해소한다.
+  * **관측성 모듈 조건부 활성화**: APM 모듈(`ObserveModule`)에 하드코딩된 플레이스홀더 키를 제거하고, 환경변수(`OBSERVE_APP_KEY`, `OBSERVE_APP_SECRET`)가 실제로 구성된 경우에만 조건부 등록하여 불필요한 백그라운드 네트워크 실패와 인증 경고를 방지한다.
 
 ---
 

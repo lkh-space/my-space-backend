@@ -195,10 +195,10 @@ describe('RabbitmqService (신뢰성 있는 브로커 연동, DLQ 및 재시도 
       expect(mockChannel.sendToQueue).toHaveBeenCalledWith(
         'markdown-indexing-queue.retry',
         mockMsg.content,
-        {
+        expect.objectContaining({
           persistent: true,
-          headers: { 'x-attempt': 2 },
-        },
+          headers: expect.objectContaining({ 'x-attempt': 2 }),
+        }),
       );
       expect(mockChannel.ack).toHaveBeenCalledWith(mockMsg);
       expect(mockChannel.nack).not.toHaveBeenCalled();
@@ -276,6 +276,79 @@ describe('RabbitmqService (신뢰성 있는 브로커 연동, DLQ 및 재시도 
 
       // then
       expect(service.isConnected()).toBe(false);
+    });
+  });
+
+  describe('분산 추적 (Distributed Tracing) 헤더 전파 및 복원', () => {
+    it('TraceContext에 활성화된 requestId가 있으면 publish 시 x-request-id와 traceparent를 헤더에 자동 주입한다', async () => {
+      // given
+      const { TraceContextService } = await import('@app/common');
+      const traceContextService = new TraceContextService();
+      const tracingRabbitmqService = new RabbitmqService(configService, traceContextService);
+      await tracingRabbitmqService.connect();
+
+      // when: 활성화된 HTTP 요청 컨텍스트 내에서 이벤트 발행
+      await traceContextService.runWithContext(
+        { requestId: 'http-req-999', traceId: 'trace-parent-999' },
+        async () => {
+          await tracingRabbitmqService.publish('test-queue', { message: 'hello' });
+        },
+      );
+
+      // then
+      expect(mockChannel.sendToQueue).toHaveBeenCalledWith(
+        'test-queue',
+        expect.any(Buffer),
+        expect.objectContaining({
+          persistent: true,
+          headers: expect.objectContaining({
+            'x-attempt': 1,
+            'x-request-id': 'http-req-999',
+            'x-trace-id': 'trace-parent-999',
+            traceparent: 'trace-parent-999',
+          }),
+        }),
+      );
+    });
+
+    it('consume 시 메시지 헤더의 x-request-id를 복원하여 핸들러 내부에서 동일한 requestId를 조회할 수 있어야 한다', async () => {
+      // given
+      const { TraceContextService } = await import('@app/common');
+      const traceContextService = new TraceContextService();
+      const tracingRabbitmqService = new RabbitmqService(configService, traceContextService);
+      await tracingRabbitmqService.connect();
+
+      let messageConsumerCallback: (msg: any) => Promise<void> = () => Promise.resolve();
+      mockChannel.consume.mockImplementation(
+        async (_queue: string, callback: (msg: any) => Promise<void>) => {
+          messageConsumerCallback = callback;
+        },
+      );
+
+      let capturedRequestId: string | undefined;
+      const handler = vi.fn().mockImplementation(async () => {
+        capturedRequestId = traceContextService.getRequestId();
+      });
+
+      await tracingRabbitmqService.consume('markdown-indexing-queue', handler);
+
+      const mockMsg = {
+        content: Buffer.from(JSON.stringify({ docId: 'doc-trace-123' })),
+        properties: {
+          headers: {
+            'x-attempt': 1,
+            'x-request-id': 'incoming-http-trace-id',
+          },
+        },
+      };
+
+      // when: 메시지 소비 콜백 호출
+      await messageConsumerCallback(mockMsg);
+
+      // then
+      expect(handler).toHaveBeenCalled();
+      expect(capturedRequestId).toBe('incoming-http-trace-id');
+      expect(mockChannel.ack).toHaveBeenCalledWith(mockMsg);
     });
   });
 });

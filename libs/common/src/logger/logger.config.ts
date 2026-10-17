@@ -46,6 +46,25 @@ function getPrettyTransport(isLocal: boolean) {
 }
 
 /**
+ * x-request-id 헤더 값 검증 정규식
+ * 영문 대소문자, 숫자, 언더스코어, 하이픈만 허용하며 최대 64자로 제한합니다.
+ * 이를 통해 개행 문자(\r\n) 주입이나 비정상적인 길이로 인한 로그 위조(Log Injection)를 차단합니다.
+ */
+export const REQUEST_ID_REGEX = /^[\w-]{1,64}$/;
+
+/**
+ * x-request-id 헤더 값을 검증하고 정제합니다.
+ * 유효하지 않거나 누락된 경우 안전한 randomUUID()를 새로 생성하여 반환합니다.
+ */
+export function sanitizeRequestId(headerValue?: string | string[]): string {
+  const candidate = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  if (candidate && REQUEST_ID_REGEX.test(candidate)) {
+    return candidate;
+  }
+  return randomUUID();
+}
+
+/**
  * Pino 로거 설정 생성 함수
  */
 export function createLoggerConfig(options?: LoggerConfigOptions): Params {
@@ -62,13 +81,9 @@ export function createLoggerConfig(options?: LoggerConfigOptions): Params {
       // 로컬 개발 환경: pino-pretty, 외부 서버(dev, qa, prod): Loki 호환 단일 라인 JSON
       transport: getPrettyTransport(isLocal),
 
-      // HTTP 요청마다 고유 Request ID 생성 및 응답 헤더(x-request-id) 전파
+      // HTTP 요청마다 고유 Request ID 검증/생성 및 응답 헤더(x-request-id) 전파
       genReqId: (req: IncomingMessage, res: ServerResponse) => {
-        const existingHeader = req.headers['x-request-id'];
-        const id =
-          (Array.isArray(existingHeader)
-            ? existingHeader[0]
-            : existingHeader) || randomUUID();
+        const id = sanitizeRequestId(req.headers['x-request-id']);
         res.setHeader('x-request-id', id);
         return id;
       },

@@ -6,6 +6,7 @@ import { RemoteUserGuard } from '../guards/remote-user.guard.js';
 import { AllExceptionsFilter } from '../filters/all-exceptions.filter.js';
 import { AuditLogInterceptor } from '../interceptors/audit-log.interceptor.js';
 import { ZodValidationPipe } from '../pipes/zod-validation.pipe.js';
+import { TraceContextService } from '../context/trace-context.service.js';
 
 describe('CoreHttpModule (BDD 단위 테스트)', () => {
   it('기본 거부 전역 가드, 전역 예외 필터, 감사 인터셉터, Zod 유효성 검증 파이프를 프로바이더로 등록해야 한다', () => {
@@ -42,5 +43,16 @@ describe('CoreHttpModule (BDD 단위 테스트)', () => {
 
     expect(pipeProvider).toBeDefined();
     expect(pipeProvider.useClass).toBe(ZodValidationPipe);
+
+    const traceContextService = providers.find(
+      (p: unknown) => p === TraceContextService,
+    );
+    expect(traceContextService).toBeDefined();
+
+    const exports = Reflect.getMetadata(
+      MODULE_METADATA.EXPORTS,
+      CoreHttpModule,
+    );
+    expect(exports).toContain(TraceContextService);
   });
 });

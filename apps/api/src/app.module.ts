@@ -23,6 +23,25 @@ import { MarkdownModule } from './markdown/markdown.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
+const observeAppKey = process.env.OBSERVE_APP_KEY;
+const observeAppSecret = process.env.OBSERVE_APP_SECRET;
+const isObserveConfigured = Boolean(
+  observeAppKey &&
+    observeAppSecret &&
+    observeAppKey !== 'YOUR_APP_KEY' &&
+    observeAppSecret !== 'YOUR_APP_SECRET',
+);
+
+const observeImports = isObserveConfigured
+  ? [
+      ObserveModule.forRoot({
+        appKey: observeAppKey as string,
+        appSecret: observeAppSecret as string,
+        serviceId: process.env.OBSERVE_SERVICE_ID || 'my-space-backend',
+      }),
+    ]
+  : [];
+
 @Module({
   imports: [
     CoreHttpModule,
@@ -53,13 +72,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
         return createLoggerConfig({ isLocal, logLevel });
       },
     }),
-    // Distributed tracing, auto-correlated logs, request/job metrics, error
-    // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
-    ObserveModule.forRoot({
-      appKey: 'YOUR_APP_KEY',
-      appSecret: 'YOUR_APP_SECRET',
-      serviceId: 'my-space-backend',
-    }),
+    ...observeImports,
     PdfModule,
     AuthModule,
     VersionModule.register({ appName: 'api' }),
