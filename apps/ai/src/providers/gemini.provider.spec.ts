@@ -76,6 +76,42 @@ describe('GeminiProvider (BDD 단위 테스트)', () => {
     );
   });
 
+  it('system role 메시지가 포함된 경우 contents에 포함하지 않고 config.systemInstruction으로 분리 주입한다', async () => {
+    // given
+    const provider = new GeminiProvider(mockConfigService);
+    const mockClient = {
+      models: {
+        generateContent: vi.fn().mockResolvedValue({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: '안전 지침을 준수한 응답입니다.' }],
+              },
+            },
+          ],
+        }),
+      },
+    };
+    (provider as any).client = mockClient;
+
+    // when
+    const res = await provider.generate([
+      { role: 'system', content: '당신은 보안 AI 어시스턴트입니다.' },
+      { role: 'user', content: '안녕하세요' },
+    ]);
+
+    // then
+    expect(res.content).toBe('안전 지침을 준수한 응답입니다.');
+    expect(mockClient.models.generateContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contents: [{ role: 'user', parts: [{ text: '안녕하세요' }] }],
+        config: expect.objectContaining({
+          systemInstruction: '당신은 보안 AI 어시스턴트입니다.',
+        }),
+      }),
+    );
+  });
+
   it('도구 호출(Function Calling) 응답 시 toolCalls 배열을 정상 추출한다', async () => {
     // given
     const provider = new GeminiProvider(mockConfigService);

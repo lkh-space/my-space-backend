@@ -58,9 +58,12 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
   ): Promise<LlmResponse> {
     const client = this.ensureClient();
 
-    // 메시지 포맷 변환 (Gemini contents)
-    const contents = messages.map((m) => ({
-      role: m.role === 'assistant' ? 'model' : m.role === 'system' ? 'user' : 'user',
+    const systemMessages = messages.filter((m) => m.role === 'system');
+    const conversationMessages = messages.filter((m) => m.role !== 'system');
+
+    // 메시지 포맷 변환 (Gemini contents: system 메시지 제외 후 분리 주입)
+    const contents = conversationMessages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
 
@@ -74,6 +77,9 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     const config: Record<string, unknown> = {};
     if (signal) {
       config.abortSignal = signal;
+    }
+    if (systemMessages.length > 0) {
+      config.systemInstruction = systemMessages.map((m) => m.content).join('\n\n');
     }
     if (functionDeclarations && functionDeclarations.length > 0) {
       config.tools = [{ functionDeclarations }];
@@ -120,7 +126,10 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
   ): AsyncGenerator<LlmStreamChunk, void, unknown> {
     const client = this.ensureClient();
 
-    const contents = messages.map((m) => ({
+    const systemMessages = messages.filter((m) => m.role === 'system');
+    const conversationMessages = messages.filter((m) => m.role !== 'system');
+
+    const contents = conversationMessages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
@@ -134,6 +143,9 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     const config: Record<string, unknown> = {};
     if (signal) {
       config.abortSignal = signal;
+    }
+    if (systemMessages.length > 0) {
+      config.systemInstruction = systemMessages.map((m) => m.content).join('\n\n');
     }
     if (functionDeclarations && functionDeclarations.length > 0) {
       config.tools = [{ functionDeclarations }];

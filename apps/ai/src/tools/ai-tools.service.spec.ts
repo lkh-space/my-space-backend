@@ -121,6 +121,18 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
       // then
       expect(result).toBe('일치하는 관련 개인 문서를 찾지 못했습니다.');
     });
+
+    it('인자 유효성 검사 실패 시 안내 메시지를 반환한다', async () => {
+      // given & when
+      const result = await service.executeTool(
+        'search_my_documents',
+        { query: '', limit: 999 },
+        'user-1',
+      );
+
+      // then
+      expect(result).toContain('도구 인자 오류');
+    });
   });
 
   describe('read_document 도구 실행', () => {
@@ -143,6 +155,49 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
       // then
       expect(result).toContain('<untrusted_document_context docId="doc-10" title="상세 문서">');
       expect(result).toContain('# 문서 전체 내용\n성공');
+    });
+
+    it('제목에 특수문자나 태그 탈출 문자가 포함된 경우 XML 속성을 안전하게 이스케이프한다', async () => {
+      // given
+      (mockPrisma.document.findFirst as any).mockResolvedValue({
+        id: 'doc-escape',
+        title: '악의적 제목" ><script>alert(1)</script>',
+        objectKey: 'docs/user-1/doc-escape/current.md',
+      });
+      (mockMinioService.getObjectAsString as any).mockResolvedValue('# 본문');
+
+      // when
+      const result = await service.executeTool(
+        'read_document',
+        { documentId: 'doc-escape' },
+        'user-1',
+      );
+
+      // then
+      expect(result).toContain('title="악의적 제목&quot; &gt;&lt;script&gt;alert(1)&lt;/script&gt;"');
+      expect(result).not.toContain('title="악의적 제목" ><script>');
+    });
+
+    it('문서 본문이 10,000자를 초과하면 10,000자로 절단(truncate)하여 컨텍스트 폭증을 방지한다', async () => {
+      // given
+      (mockPrisma.document.findFirst as any).mockResolvedValue({
+        id: 'doc-large',
+        title: '거대 문서',
+        objectKey: 'docs/user-1/doc-large/current.md',
+      });
+      const largeContent = 'a'.repeat(15_000);
+      (mockMinioService.getObjectAsString as any).mockResolvedValue(largeContent);
+
+      // when
+      const result = await service.executeTool(
+        'read_document',
+        { documentId: 'doc-large' },
+        'user-1',
+      );
+
+      // then
+      expect(result).toContain('최대 10,000자까지만 표시되었습니다');
+      expect(result.length).toBeLessThan(12_000);
     });
 
     it('문서가 존재하지 않거나 권한이 없으면 NotFoundException을 던진다', async () => {
@@ -195,10 +250,11 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
 
     it('folderId가 지정되면 MarkdownWriterService에 해당 folderId를 전달한다', async () => {
       // given
+      const folderUuid = '11111111-1111-1111-1111-111111111111';
       (mockMarkdownWriterService.createDocument as any).mockResolvedValue({
         id: 'new-doc-2',
         title: '폴더 지정 문서',
-        folderId: 'valid-folder-1',
+        folderId: folderUuid,
       });
 
       // when
@@ -207,7 +263,7 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
         {
           title: '폴더 지정 문서',
           content: '내용',
-          folderId: 'valid-folder-1',
+          folderId: folderUuid,
         },
         'user-1',
       );
@@ -216,7 +272,7 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
       expect(mockMarkdownWriterService.createDocument).toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({
-          folderId: 'valid-folder-1',
+          folderId: folderUuid,
         }),
       );
       expect(result).toContain('성공적으로 저장되었습니다');
@@ -224,8 +280,9 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
 
     it('존재하지 않거나 타인의 폴더인 경우 MarkdownWriterService에서 발생한 FolderNotFoundException을 전파한다 (Cross-tenant 방어)', async () => {
       // given
+      const victimFolderUuid = '22222222-2222-2222-2222-222222222222';
       (mockMarkdownWriterService.createDocument as any).mockRejectedValue(
-        new FolderNotFoundException('victim-folder-999'),
+        new FolderNotFoundException(victimFolderUuid),
       );
 
       // when & then
@@ -235,7 +292,7 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
           {
             title: '탈취 시도 문서',
             content: '내용',
-            folderId: 'victim-folder-999',
+            folderId: victimFolderUuid,
           },
           'attacker-user',
         ),

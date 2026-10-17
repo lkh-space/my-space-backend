@@ -1,10 +1,46 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { z } from 'zod';
 import { MarkdownWriterService } from '@app/markdown-core';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
 import { ProviderFactory } from '../providers/provider.factory.js';
 import type { LlmToolDefinition } from '../providers/llm.provider.interface.js';
+
+const searchMyDocumentsArgsSchema = z.object({
+  query: z
+    .string()
+    .min(1, '검색어는 필수입니다.')
+    .max(1000, '검색어는 최대 1,000자 이하여야 합니다.'),
+  limit: z.coerce.number().int().min(1).max(10).default(5),
+});
+
+const readDocumentArgsSchema = z.object({
+  documentId: z.string().min(1, '문서 ID는 필수입니다.').max(100),
+});
+
+const saveToMarkdownArgsSchema = z.object({
+  title: z.string().min(1).max(200).default('Untitled AI Note'),
+  content: z
+    .string()
+    .max(50_000, '문서 본문은 최대 50,000자 이하여야 합니다.')
+    .default(''),
+  folderId: z
+    .string()
+    .max(100, '폴더 ID는 최대 100자 이하여야 합니다.')
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+  tags: z.array(z.string().max(50)).max(20).optional(),
+});
+
+function escapeXmlAttr(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 @Injectable()
 export class AiToolsService {
@@ -36,7 +72,7 @@ export class AiToolsService {
             },
             limit: {
               type: 'number',
-              description: '조회할 최대 청크 개수 (기본 5개)',
+              description: '조회할 최대 청크 개수 (최소 1개, 최대 10개, 기본 5개)',
             },
           },
           required: ['query'],
@@ -89,7 +125,7 @@ export class AiToolsService {
   }
 
   /**
-   * Tool 함수 동적 실행기 (소유자 격리 보장)
+   * Tool 함수 동적 실행기 (소유자 격리 보장 및 인자 스키마 검증)
    */
   async executeTool(
     name: string,
@@ -100,22 +136,37 @@ export class AiToolsService {
 
     switch (name) {
       case 'search_my_documents': {
-        const query = String(args.query || '');
-        const limit = Number(args.limit) || 5;
-        return this.searchMyDocuments(ownerId, query, limit);
+        const parsed = searchMyDocumentsArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          const errMsg = parsed.error.issues.map((i) => i.message).join(', ');
+          this.logger.warn(`[ToolExecution] search_my_documents 인자 검증 실패: ${errMsg}`);
+          return `도구 인자 오류: ${errMsg}`;
+        }
+        return this.searchMyDocuments(ownerId, parsed.data.query, parsed.data.limit);
       }
       case 'read_document': {
-        const documentId = String(args.documentId || '');
-        return this.readDocument(ownerId, documentId);
+        const parsed = readDocumentArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          const errMsg = parsed.error.issues.map((i) => i.message).join(', ');
+          this.logger.warn(`[ToolExecution] read_document 인자 검증 실패: ${errMsg}`);
+          return `도구 인자 오류: ${errMsg}`;
+        }
+        return this.readDocument(ownerId, parsed.data.documentId);
       }
       case 'save_to_markdown': {
-        const title = String(args.title || 'Untitled AI Note');
-        const content = String(args.content || '');
-        const folderId = args.folderId ? String(args.folderId) : undefined;
-        const tags = Array.isArray(args.tags)
-          ? (args.tags as string[])
-          : undefined;
-        return this.saveToMarkdown(ownerId, title, content, folderId, tags);
+        const parsed = saveToMarkdownArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          const errMsg = parsed.error.issues.map((i) => i.message).join(', ');
+          this.logger.warn(`[ToolExecution] save_to_markdown 인자 검증 실패: ${errMsg}`);
+          return `도구 인자 오류: ${errMsg}`;
+        }
+        return this.saveToMarkdown(
+          ownerId,
+          parsed.data.title,
+          parsed.data.content,
+          parsed.data.folderId,
+          parsed.data.tags,
+        );
       }
       default:
         throw new NotFoundException(`지원하지 않는 도구 이름입니다: ${name}`);
@@ -143,7 +194,7 @@ export class AiToolsService {
     const formatted = results
       .map(
         (r: any, i: number) =>
-          `[검색 결과 ${i + 1}] (문서 ID: ${r.payload.documentId}, 제목: "${r.payload.title}", 유사도: ${r.score.toFixed(3)})\n소속 헤딩: ${r.payload.heading}\n본문 내용:\n${r.payload.content}`,
+          `[검색 결과 ${i + 1}] (문서 ID: ${escapeXmlAttr(String(r.payload.documentId))}, 제목: "${escapeXmlAttr(String(r.payload.title))}", 유사도: ${r.score.toFixed(3)})\n소속 헤딩: ${r.payload.heading}\n본문 내용:\n${r.payload.content}`,
       )
       .join('\n\n---\n\n');
 
@@ -167,7 +218,16 @@ export class AiToolsService {
       doc.objectKey,
     );
 
-    return `<untrusted_document_context docId="${documentId}" title="${doc.title}">\n${raw}\n</untrusted_document_context>`;
+    const MAX_DOCUMENT_LENGTH = 10_000;
+    const truncated =
+      raw.length > MAX_DOCUMENT_LENGTH
+        ? raw.slice(0, MAX_DOCUMENT_LENGTH) + '\n\n...[문서 본문이 길어 최대 10,000자까지만 표시되었습니다]...'
+        : raw;
+
+    const safeTitle = escapeXmlAttr(doc.title);
+    const safeDocId = escapeXmlAttr(documentId);
+
+    return `<untrusted_document_context docId="${safeDocId}" title="${safeTitle}">\n${truncated}\n</untrusted_document_context>`;
   }
 
   private async saveToMarkdown(
