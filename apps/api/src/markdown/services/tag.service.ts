@@ -48,22 +48,22 @@ export class TagService {
       return [];
     }
 
-    const tagIds: string[] = [];
+    // 1. 신규 태그 일괄 생성 (이미 존재하는 태그는 skipDuplicates로 무시하여 동시성 충돌 방어)
+    await client.tag.createMany({
+      data: cleanNames.map((name) => ({ name, ownerId })),
+      skipDuplicates: true,
+    });
 
-    for (const name of cleanNames) {
-      let tag = await client.tag.findFirst({
-        where: { name, ownerId },
-      });
+    // 2. 전체 매칭 태그 일괄 조회 (단 1회 쿼리)
+    const tags = await client.tag.findMany({
+      where: { ownerId, name: { in: cleanNames } },
+      select: { id: true, name: true },
+    });
 
-      if (!tag) {
-        tag = await client.tag.create({
-          data: { name, ownerId },
-        });
-      }
-
-      tagIds.push(tag.id);
-    }
-
-    return tagIds;
+    // 3. 원래 cleanNames 순서 유지 매핑
+    const tagMap = new Map(tags.map((t) => [t.name, t.id]));
+    return cleanNames
+      .map((name) => tagMap.get(name))
+      .filter((id): id is string => Boolean(id));
   }
 }

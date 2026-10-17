@@ -71,6 +71,9 @@ last-updated: 2026-10-16
 * **`BR-M07` (낙관적 동시성 잠금 및 Lost Update 방어)**:
   - 문서 수정(`PUT /api/v1/markdown/documents/:id`) 시 `If-Match` 헤더 또는 `expectedVersion` 필드를 통해 클라이언트가 수정 대상 버전을 명시할 수 있다.
   - 지정된 기대 버전과 DB 현재 버전이 일치하지 않거나, 동시 요청 경쟁 조건으로 인해 대상 버전 레코드 갱신에 실패한 경우 즉시 `DOCUMENT_VERSION_CONFLICT`(409 Conflict) 예외를 발생시키고 MinIO 스토리지를 원래 상태로 보상 롤백한다.
+* **`BR-M08` (원자적 태그 일괄 해석 및 경쟁 방어)**:
+  - 문서 생성 및 수정 시 지정된 태그 배열은 N+1 반복 쿼리 대신 `createMany({ skipDuplicates: true })` 및 `findMany({ where: { name: { in: cleanNames } } })`를 통해 단 2회의 쿼리로 원자적으로 해석 및 등록되어야 한다.
+  - 동일한 태그를 생성하려는 동시 요청이 발생하더라도 `skipDuplicates: true`를 통해 DB 유니크 제약 충돌(`P2002`)을 원천 방어하고 일관성을 보장한다.
 
 ---
 

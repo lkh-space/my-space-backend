@@ -46,5 +46,41 @@ describe('Markdown Tags API (E2E)', () => {
       expect(backendTag).toBeDefined();
       expect(backendTag.documentCount).toBe(1);
     });
+
+    it('동일한 태그를 포함하는 다수의 문서가 동시에 생성되어도 P2002 충돌 없이 원자적으로 처리되어야 한다 (M-4 경쟁 조건 방어)', async () => {
+      // given: 동일한 태그들을 공유하는 5건의 문서 생성 요청 준비
+      const sharedTags = ['concurrency', 'shared-tag', 'fast'];
+      const requests = Array.from({ length: 5 }, (_, i) =>
+        withAuthHeaders(
+          ctx.req.post('/api/v1/markdown/documents').send({
+            title: `동시 문서 ${i + 1}`,
+            content: `동시 본문 내용 ${i + 1}`,
+            tags: sharedTags,
+          }),
+          DEFAULT_TEST_USER,
+        ),
+      );
+
+      // when: 5개의 요청을 병렬로 동시 실행
+      const results = await Promise.all(requests);
+
+      // then: 모든 요청이 201 Created로 성공해야 함 (P2002 에러 없음)
+      for (const res of results) {
+        expect(res.status).toBe(201);
+        expect(res.body.tags).toEqual(expect.arrayContaining(sharedTags));
+      }
+
+      // 태그 조회 시 중복 없이 정확히 3개의 태그만 생성되고 각 카운트가 5이어야 함
+      const tagsRes = await withAuthHeaders(
+        ctx.req.get('/api/v1/markdown/tags'),
+        DEFAULT_TEST_USER,
+      ).expect(200);
+
+      expect(tagsRes.body).toHaveLength(3);
+      for (const tag of tagsRes.body) {
+        expect(sharedTags).toContain(tag.name);
+        expect(tag.documentCount).toBe(5);
+      }
+    });
   });
 });
