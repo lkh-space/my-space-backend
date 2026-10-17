@@ -10,6 +10,7 @@ import {
   FolderAlreadyExistsException,
   FolderCyclicDependencyException,
 } from '../exceptions/markdown.exception.js';
+import { Prisma } from '@prisma/client';
 
 interface RawFolder {
   id: string;
@@ -56,22 +57,32 @@ export class FolderService {
       throw new FolderAlreadyExistsException(dto.name, parentId);
     }
 
-    const created = await this.prisma.folder.create({
-      data: {
-        name: dto.name,
-        parentId,
-        ownerId,
-      },
-    });
+    try {
+      const created = await this.prisma.folder.create({
+        data: {
+          name: dto.name,
+          parentId,
+          ownerId,
+        },
+      });
 
-    return new FolderResponseDto({
-      id: created.id,
-      name: created.name,
-      parentId: created.parentId,
-      createdAt: created.createdAt.toISOString(),
-      updatedAt: created.updatedAt.toISOString(),
-      children: [],
-    });
+      return new FolderResponseDto({
+        id: created.id,
+        name: created.name,
+        parentId: created.parentId,
+        createdAt: created.createdAt.toISOString(),
+        updatedAt: created.updatedAt.toISOString(),
+        children: [],
+      });
+    } catch (error: any) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new FolderAlreadyExistsException(dto.name, parentId);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -121,16 +132,23 @@ export class FolderService {
           throw new FolderNotFoundException(dto.parentId);
         }
 
-        // targetParent의 상위 체인을 검사하여 folderId가 포함되어 있는지 확인
-        let currentParentId: string | null = targetParent.parentId;
-        while (currentParentId) {
-          if (currentParentId === folderId) {
-            throw new FolderCyclicDependencyException(folderId, dto.parentId);
-          }
-          const ancestor = await this.prisma.folder.findUnique({
-            where: { id: currentParentId },
-          });
-          currentParentId = ancestor?.parentId || null;
+        // targetParent의 상위 체인을 재귀 CTE 1회 쿼리로 검사 (깊이 64 제한으로 순환 시 무한 루프 차단)
+        const cycles = await this.prisma.$queryRaw<{ exists: number }[]>`
+          WITH RECURSIVE anc AS (
+            SELECT id, parent_id, 1 AS depth
+            FROM folders
+            WHERE id = ${dto.parentId} AND owner_id = ${ownerId}
+            UNION ALL
+            SELECT f.id, f.parent_id, a.depth + 1
+            FROM folders f
+            JOIN anc a ON f.id = a.parent_id
+            WHERE a.depth < 64
+          )
+          SELECT 1 AS exists FROM anc WHERE id = ${folderId} LIMIT 1;
+        `;
+
+        if (cycles.length > 0) {
+          throw new FolderCyclicDependencyException(folderId, dto.parentId);
         }
       }
     }
@@ -151,22 +169,32 @@ export class FolderService {
       }
     }
 
-    const updated = await this.prisma.folder.update({
-      where: { id: folderId },
-      data: {
-        name: newName,
-        parentId: newParentId,
-      },
-    });
+    try {
+      const updated = await this.prisma.folder.update({
+        where: { id: folderId },
+        data: {
+          name: newName,
+          parentId: newParentId,
+        },
+      });
 
-    return new FolderResponseDto({
-      id: updated.id,
-      name: updated.name,
-      parentId: updated.parentId,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-      children: [],
-    });
+      return new FolderResponseDto({
+        id: updated.id,
+        name: updated.name,
+        parentId: updated.parentId,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+        children: [],
+      });
+    } catch (error: any) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new FolderAlreadyExistsException(newName, newParentId);
+      }
+      throw error;
+    }
   }
 
   /**

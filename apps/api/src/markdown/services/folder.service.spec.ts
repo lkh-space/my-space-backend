@@ -21,6 +21,7 @@ describe('FolderService', () => {
         update: vi.fn(),
         delete: vi.fn(),
       },
+      $queryRaw: vi.fn(),
     } as unknown as PrismaService;
 
     service = new FolderService(prisma);
@@ -65,6 +66,26 @@ describe('FolderService', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+
+      // when & then
+      await expect(service.createFolder(ownerId, dto)).rejects.toThrow(
+        FolderAlreadyExistsException,
+      );
+    });
+
+    it('동시 요청으로 DB에서 P2002 유니크 제약 충돌이 발생하면 FolderAlreadyExistsException으로 변환해야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const dto = { name: 'Architecture' };
+
+      vi.mocked(prisma.folder.findFirst).mockResolvedValueOnce(null);
+      const p2002Error = new Error('Unique constraint failed') as any;
+      p2002Error.code = 'P2002';
+      Object.setPrototypeOf(
+        p2002Error,
+        (await import('@prisma/client')).Prisma.PrismaClientKnownRequestError.prototype,
+      );
+      vi.mocked(prisma.folder.create).mockRejectedValueOnce(p2002Error);
 
       // when & then
       await expect(service.createFolder(ownerId, dto)).rejects.toThrow(
@@ -152,6 +173,89 @@ describe('FolderService', () => {
       await expect(
         service.updateFolder(ownerId, folderId, dto),
       ).rejects.toThrow(FolderCyclicDependencyException);
+    });
+
+    it('재귀 CTE 쿼리 결과 순환 조상 체인이 발견되면 FolderCyclicDependencyException을 던져야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const folderId = 'f-root';
+      const newParentId = 'f-child';
+      const dto = { parentId: newParentId };
+
+      vi.mocked(prisma.folder.findFirst)
+        .mockResolvedValueOnce({
+          id: folderId,
+          name: 'Root',
+          parentId: null,
+          ownerId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .mockResolvedValueOnce({
+          id: newParentId,
+          name: 'Child',
+          parentId: folderId,
+          ownerId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+      // 재귀 CTE에서 f-root가 조상 체인에 존재함을 반환
+      vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ exists: 1 }] as never);
+
+      // when & then
+      await expect(
+        service.updateFolder(ownerId, folderId, dto),
+      ).rejects.toThrow(FolderCyclicDependencyException);
+    });
+
+    it('순환 참조가 없고 중복이 없으면 정상적으로 부모 폴더를 이동해야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const folderId = 'f-child';
+      const newParentId = 'f-other-parent';
+      const dto = { parentId: newParentId };
+
+      vi.mocked(prisma.folder.findFirst)
+        .mockResolvedValueOnce({
+          id: folderId,
+          name: 'Child',
+          parentId: 'f-old-parent',
+          ownerId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .mockResolvedValueOnce({
+          id: newParentId,
+          name: 'Other Parent',
+          parentId: null,
+          ownerId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .mockResolvedValueOnce(null);
+
+      // 재귀 CTE에서 순환 체인 미발견
+      vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([] as never);
+
+      vi.mocked(prisma.folder.update).mockResolvedValueOnce({
+        id: folderId,
+        name: 'Child',
+        parentId: newParentId,
+        ownerId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // when
+      const updated = await service.updateFolder(ownerId, folderId, dto);
+
+      // then
+      expect(updated.parentId).toBe(newParentId);
+      expect(prisma.folder.update).toHaveBeenCalledWith({
+        where: { id: folderId },
+        data: { name: 'Child', parentId: newParentId },
+      });
     });
   });
 

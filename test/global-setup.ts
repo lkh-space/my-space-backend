@@ -16,12 +16,12 @@ export default async function setup() {
     process.env.IS_LOCAL = 'true';
     process.env.NODE_ENV = 'test';
 
-    console.log('[E2E Global Setup] Prisma DB 스키마 푸시 실행...');
-    execSync('pnpm prisma db push --skip-generate', {
+    console.log('[E2E Global Setup] Prisma DB 마이그레이션 적용 실행...');
+    execSync('pnpm prisma migrate deploy', {
       env: { ...process.env, DATABASE_URL: databaseUrl },
       stdio: 'inherit',
     });
-    console.log('[E2E Global Setup] Prisma DB 스키마 푸시 완료.');
+    console.log('[E2E Global Setup] Prisma DB 마이그레이션 적용 완료.');
     return async () => {};
   }
 
@@ -52,18 +52,18 @@ export default async function setup() {
   process.env.IS_LOCAL = 'true';
   process.env.NODE_ENV = 'test';
 
-  console.log('[E2E Global Setup] Prisma DB 스키마 푸시 실행...');
+  console.log('[E2E Global Setup] Prisma DB 마이그레이션 적용 실행...');
   try {
-    execSync('pnpm prisma db push --skip-generate', {
+    execSync('pnpm prisma migrate deploy', {
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,
       },
       stdio: 'inherit',
     });
-    console.log('[E2E Global Setup] Prisma DB 스키마 푸시 완료.');
+    console.log('[E2E Global Setup] Prisma DB 마이그레이션 적용 완료.');
   } catch (error) {
-    console.error('[E2E Global Setup] Prisma DB 스키마 푸시 실패:', error);
+    console.error('[E2E Global Setup] Prisma DB 마이그레이션 적용 실패:', error);
     await postgresContainer.stop();
     throw error;
   }

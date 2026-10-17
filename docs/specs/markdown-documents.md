@@ -54,10 +54,12 @@ last-updated: 2026-10-16
 
 * **`BR-M01` (사용자 격리)**:
   - 모든 폴더, 문서, 태그, 리비전, 이미지 에셋은 `ownerId`(`req.user.username`)에 종속되며, 타인의 데이터에 대한 읽기/쓰기를 엄격히 금지한다.
-* **`BR-M02` (폴더 순환 참조 방지)**:
+* **`BR-M02` (폴더 순환 참조 방지 및 재귀 CTE)**:
   - 폴더 이동 시 자기 자신(`folderId === parentId`) 또는 자신의 하위 자손 폴더를 부모로 설정할 수 없다 (`FOLDER_CYCLIC_DEPENDENCY`).
-* **`BR-M03` (폴더 중복 방지)**:
+  - 조상 체인 검증은 N+1 단일 조회를 제거하고 재귀 CTE(`WITH RECURSIVE`) 단 1회의 쿼리로 수행하며, 최대 탐색 깊이를 64단계(`depth < 64`)로 제한하여 순환 사이클이 발생하더라도 무한 루프에 빠지지 않도록 방어한다.
+* **`BR-M03` (폴더 중복 방지 및 루트 NULL 고유성)**:
   - 동일한 부모 폴더 경로 내에서는 동일한 이름의 폴더가 존재할 수 없다 (`FOLDER_ALREADY_EXISTS`).
+  - PostgreSQL B-tree의 NULL 고유성 허점(NULL끼리는 고유하지 않음)을 방어하기 위해 DB 레벨에 루트 폴더 전용 부분 유니크 인덱스(`WHERE parent_id IS NULL`)를 적용하며, 동시 요청 경쟁 시의 `P2002` 충돌을 안전하게 `FolderAlreadyExistsException`(409 Conflict)으로 변환한다.
 * **`BR-M04` (리비전 자동 생성)**:
   - 문서 수정 시 본문(`content`) 또는 제목(`title`), Frontmatter에 변경이 발생한 경우에만 기존 버전을 `DocumentRevision` 및 MinIO `revisions/` 경로에 보존하고 `currentVersion`을 1 증가시킨다.
 * **`BR-M05` (에셋 파일 검증 및 DoS/XSS 방어)**:
