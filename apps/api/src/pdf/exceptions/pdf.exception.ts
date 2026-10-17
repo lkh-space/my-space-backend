@@ -43,7 +43,35 @@ export class PdfNotProtectedException extends BaseDomainException {
 }
 
 /**
- * 병합 파일 개수 제약(2개 미만 또는 20개 초과)을 위반한 경우
+ * 병합 파일 최소 개수(2개) 미만인 경우
+ */
+export class PdfMinFilesException extends BaseDomainException {
+  readonly code = 'PDF_MIN_FILE_COUNT_NOT_MET';
+
+  constructor(count: number, details?: Record<string, unknown>) {
+    super(
+      `PDF 병합을 위해 최소 2개 이상의 파일이 필요합니다. (현재: ${count}개)`,
+      { count, ...details },
+    );
+  }
+}
+
+/**
+ * 병합 파일 최대 개수(20개) 초과한 경우
+ */
+export class PdfMaxFilesException extends BaseDomainException {
+  readonly code = 'PDF_MAX_FILE_COUNT_EXCEEDED';
+
+  constructor(count: number, details?: Record<string, unknown>) {
+    super(
+      `1회 요청 시 최대 20개의 파일까지 병합 가능합니다. (현재: ${count}개)`,
+      { count, ...details },
+    );
+  }
+}
+
+/**
+ * @deprecated 하위 호환성을 위해 유지되며, PdfMinFilesException 또는 PdfMaxFilesException 사용을 권장합니다.
  */
 export class PdfFileCountException extends BaseDomainException {
   readonly code: string;

@@ -27,6 +27,7 @@ import {
   type AuthUser,
 } from '@app/common/guards/remote-user.guard.js';
 import { CurrentUser } from '@app/common/decorators/current-user.decorator.js';
+import { formatContentDisposition } from '@app/common/utils/content-disposition.util.js';
 import { AssetService } from '../services/asset.service.js';
 import { AssetUploadResponseDto } from '../dto/asset.dto.js';
 
@@ -114,7 +115,8 @@ export class AssetController {
 
     // SVG 파일은 스크립트 실행 공격 방지를 위해 attachment로 강제 다운로드 서빙
     if (contentType === 'image/svg+xml') {
-      res.setHeader('Content-Disposition', 'attachment');
+      const filename = key.split('/').pop() || 'asset.svg';
+      res.setHeader('Content-Disposition', formatContentDisposition(filename, 'attachment'));
     } else {
       res.setHeader('Content-Disposition', 'inline');
     }

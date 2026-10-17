@@ -2,9 +2,10 @@ import {
   Injectable,
   OnModuleInit,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { StorageObjectNotFoundException } from '@app/common';
+
 import {
   S3Client,
   HeadBucketCommand,
@@ -12,6 +13,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { Readable } from 'node:stream';
@@ -138,7 +140,11 @@ export class MinioService implements OnModuleInit {
       );
 
       if (!response.Body) {
-        throw new NotFoundException(`오브젝트(${key}) 내용이 비어있습니다.`);
+        throw new StorageObjectNotFoundException(
+          bucket,
+          key,
+          '오브젝트 내용이 비어있습니다.',
+        );
       }
 
       // Readable stream -> string 변환
@@ -151,9 +157,7 @@ export class MinioService implements OnModuleInit {
     } catch (error: unknown) {
       const err = error as { name?: string; message?: string };
       if (err.name === 'NoSuchKey' || err.name === 'NotFound') {
-        throw new NotFoundException(
-          `스토리지에서 파일을 찾을 수 없습니다: ${key}`,
-        );
+        throw new StorageObjectNotFoundException(bucket, key);
       }
       throw error;
     }
@@ -182,13 +186,12 @@ export class MinioService implements OnModuleInit {
     } catch (error: unknown) {
       const err = error as { name?: string; message?: string };
       if (err.name === 'NoSuchKey' || err.name === 'NotFound') {
-        throw new NotFoundException(
-          `스토리지에서 파일을 찾을 수 없습니다: ${key}`,
-        );
+        throw new StorageObjectNotFoundException(bucket, key);
       }
       throw error;
     }
   }
+
 
   /**
    * 오브젝트 삭제
@@ -204,6 +207,28 @@ export class MinioService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(
         `오브젝트(${key}) 삭제 중 에러 무시: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * 오브젝트 일괄 배치 삭제 (고아 객체 방지 및 네트워크 I/O 최적화)
+   */
+  async deleteObjects(bucket: string, keys: string[]): Promise<void> {
+    if (!keys || keys.length === 0) return;
+    try {
+      await this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: {
+            Objects: keys.map((Key) => ({ Key })),
+            Quiet: true,
+          },
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `오브젝트 일괄 삭제(${keys.length}건) 중 에러 무시: ${(error as Error).message}`,
       );
     }
   }

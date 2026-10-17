@@ -1,5 +1,6 @@
+import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
@@ -17,10 +18,13 @@ import {
   DocumentNotFoundException,
   FolderNotFoundException,
   DocumentVersionConflictException,
+  InvalidMarkdownFileException,
 } from '../exceptions/markdown.exception.js';
+
 
 @Injectable()
 export class DocumentService {
+  private readonly logger = new Logger(DocumentService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly minioService: MinioService,
@@ -490,16 +494,15 @@ export class DocumentService {
       where: { id: doc.id },
     });
 
-    // 2. DB 삭제 성공 후 MinIO 최신 및 리비전 오브젝트 정리
-    await this.minioService
-      .deleteObject(this.minioService.docsBucket, doc.objectKey)
-      .catch(() => {});
+    // 2. DB 삭제 성공 후 MinIO 최신 및 모든 과거 리비전 오브젝트 일괄 배치 삭제 (고아 객체 방지)
+    const keysToDelete = [
+      doc.objectKey,
+      ...doc.revisions.map((rev) => rev.objectKey),
+    ].filter(Boolean);
 
-    for (const rev of doc.revisions) {
-      await this.minioService
-        .deleteObject(this.minioService.docsBucket, rev.objectKey)
-        .catch(() => {});
-    }
+    await this.minioService
+      .deleteObjects(this.minioService.docsBucket, keysToDelete)
+      .catch(() => {});
 
     // 3. OpenSearch 색인 삭제
     await this.openSearchService.deleteDocument(doc.id).catch(() => {});
@@ -522,8 +525,9 @@ export class DocumentService {
     folderId?: string | null,
   ): Promise<DocumentDetailDto> {
     if (!file || !file.buffer || file.buffer.length === 0) {
-      throw new DocumentNotFoundException('임포트할 .md 파일이 제공되지 않았습니다.');
+      throw new InvalidMarkdownFileException('임포트할 .md 파일이 제공되지 않았습니다.');
     }
+
 
     const rawContent = file.buffer.toString('utf-8');
     const parsed = safeMatter(rawContent);
@@ -592,6 +596,9 @@ export class DocumentService {
 
   /**
    * PDF 내보내기용 PDF 버퍼 생성
+   * - UTF-8 / 한글 폰트 지원 (@pdf-lib/fontkit 및 PDF_FONT_PATH / CUSTOM_FONT_PATH)
+   * - Dynamic line wrapping (고정 길이 절단 제거)
+   * - 자동 페이지네이션 (페이지 오버플로 시 새 페이지 생성)
    */
   async exportPdf(
     ownerId: string,
@@ -601,85 +608,154 @@ export class DocumentService {
 
     const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
     const pdfDoc = await PDFDocument.create();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    let font: any;
+    let boldFont: any;
+    let hasCustomFont = false;
+
+    // 환경 변수 기반 한국어/유니코드 TTF 폰트 파일 탐색 및 fontkit 등록
+    const fontPath = process.env.PDF_FONT_PATH || process.env.CUSTOM_FONT_PATH;
+    if (fontPath && fs.existsSync(fontPath)) {
+      try {
+        const fontkitModule = await import('@pdf-lib/fontkit');
+        const fontkit = (fontkitModule.default || fontkitModule) as any;
+        pdfDoc.registerFontkit(fontkit);
+        const fontBytes = fs.readFileSync(fontPath);
+        font = await pdfDoc.embedFont(fontBytes);
+        boldFont = font;
+        hasCustomFont = true;
+      } catch (e) {
+        this.logger.warn(`PDF 커스텀 폰트 로드 실패, 표준 폰트로 대체: ${e}`);
+      }
+    }
+
+    if (!hasCustomFont) {
+      font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    }
 
     let page = pdfDoc.addPage([595.28, 841.89]); // A4
     const { width, height } = page.getSize();
     const margin = 50;
+    const maxContentWidth = width - margin * 2;
     let y = height - margin;
 
-    // 제목 출력 (Latin-1 지원 글자 또는 기본 변환)
-    const sanitize = (text: string) =>
-      Array.from(text)
-        .map((char) => (char.charCodeAt(0) <= 127 ? char : '?'))
+    // 폰트가 유니코드를 지원하지 않을 경우 WinAnsi 범위 외 문자 안전 처리
+    const sanitize = (text: string) => {
+      if (hasCustomFont) return text;
+      return Array.from(text)
+        .map((char) => (char.charCodeAt(0) <= 255 ? char : '?'))
         .join('');
+    };
 
-    page.drawText(sanitize(detail.title), {
-      x: margin,
-      y,
-      size: 20,
-      font: boldFont,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-    y -= 30;
+    // 폭에 따른 동적 줄바꿈 (Dynamic Line Wrapping)
+    const wrapText = (text: string, targetFont: any, fontSize: number): string[] => {
+      const sanitized = sanitize(text);
+      if (!sanitized) return [''];
 
-    // 메타데이터 줄
+      const words = sanitized.split(' ');
+      const resultLines: string[] = [];
+      let currentLine = '';
+
+      for (const word of words) {
+        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        let candidateWidth: number;
+        try {
+          candidateWidth = targetFont.widthOfTextAtSize(candidate, fontSize);
+        } catch {
+          candidateWidth = candidate.length * fontSize * 0.5;
+        }
+
+        if (candidateWidth <= maxContentWidth) {
+          currentLine = candidate;
+        } else {
+          if (currentLine) {
+            resultLines.push(currentLine);
+          }
+          // 단일 단어가 maxContentWidth를 초과하는 경우 문자 단위 분할
+          let singleWord = word;
+          while (singleWord.length > 0) {
+            let charIndex = 0;
+            while (charIndex < singleWord.length) {
+              const sub = singleWord.slice(0, charIndex + 1);
+              let subWidth = 0;
+              try {
+                subWidth = targetFont.widthOfTextAtSize(sub, fontSize);
+              } catch {
+                subWidth = sub.length * fontSize * 0.5;
+              }
+              if (subWidth > maxContentWidth && charIndex > 0) break;
+              charIndex++;
+            }
+            resultLines.push(singleWord.slice(0, charIndex));
+            singleWord = singleWord.slice(charIndex);
+          }
+          currentLine = '';
+        }
+      }
+
+      if (currentLine) {
+        resultLines.push(currentLine);
+      }
+
+      return resultLines.length > 0 ? resultLines : [''];
+    };
+
+    const printLine = (
+      text: string,
+      fontSize: number,
+      targetFont: any,
+      color: any,
+      lineSpacing: number,
+    ) => {
+      const wrapped = wrapText(text, targetFont, fontSize);
+      for (const wl of wrapped) {
+        if (y < margin + fontSize) {
+          page = pdfDoc.addPage([595.28, 841.89]);
+          y = height - margin;
+        }
+        page.drawText(wl, {
+          x: margin,
+          y,
+          size: fontSize,
+          font: targetFont,
+          color,
+        });
+        y -= lineSpacing;
+      }
+    };
+
+    // 1. 제목 출력
+    printLine(detail.title, 20, boldFont, rgb(0.1, 0.1, 0.1), 26);
+    y -= 10;
+
+    // 2. 메타데이터 줄
     const metaText = `Version: ${detail.currentVersion} | Updated: ${detail.updatedAt.slice(0, 10)}`;
-    page.drawText(metaText, {
-      x: margin,
-      y,
-      size: 10,
-      font,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-    y -= 25;
+    printLine(metaText, 10, font, rgb(0.5, 0.5, 0.5), 16);
+    y -= 8;
 
-    // 구분선
+    // 3. 구분선
+    if (y < margin + 10) {
+      page = pdfDoc.addPage([595.28, 841.89]);
+      y = height - margin;
+    }
     page.drawLine({
       start: { x: margin, y },
       end: { x: width - margin, y },
       thickness: 1,
       color: rgb(0.8, 0.8, 0.8),
     });
-    y -= 25;
+    y -= 20;
 
-    // 본문 내용 간단 래핑 출력
+    // 4. 본문 내용 동적 래핑 및 페이지네이션 출력
     const lines = detail.content.split('\n');
     for (const rawLine of lines) {
-      if (y < margin + 20) {
-        page = pdfDoc.addPage([595.28, 841.89]);
-        y = height - margin;
-      }
-
-      const line = sanitize(rawLine);
-      if (line.startsWith('# ')) {
-        page.drawText(line.replace('# ', ''), {
-          x: margin,
-          y,
-          size: 16,
-          font: boldFont,
-          color: rgb(0.2, 0.2, 0.2),
-        });
-        y -= 24;
-      } else if (line.startsWith('## ')) {
-        page.drawText(line.replace('## ', ''), {
-          x: margin,
-          y,
-          size: 14,
-          font: boldFont,
-          color: rgb(0.3, 0.3, 0.3),
-        });
-        y -= 20;
+      if (rawLine.startsWith('# ')) {
+        printLine(rawLine.replace('# ', ''), 16, boldFont, rgb(0.2, 0.2, 0.2), 22);
+      } else if (rawLine.startsWith('## ')) {
+        printLine(rawLine.replace('## ', ''), 14, boldFont, rgb(0.3, 0.3, 0.3), 18);
       } else {
-        page.drawText(line.slice(0, 90), {
-          x: margin,
-          y,
-          size: 10,
-          font,
-          color: rgb(0.2, 0.2, 0.2),
-        });
-        y -= 14;
+        printLine(rawLine, 10, font, rgb(0.2, 0.2, 0.2), 14);
       }
     }
 

@@ -34,7 +34,7 @@ import {
   validateMultiplePdfs,
 } from './utils/pdf-file.validator.js';
 import { buildMergeInputs } from './utils/password.parser.js';
-import { RemoteUserGuard } from '@app/common';
+import { RemoteUserGuard, formatContentDisposition } from '@app/common';
 
 export const PDF_SINGLE_FILE_LIMITS = {
   fileSize: MAX_SINGLE_FILE_SIZE, // 50MB (BR-P03)
@@ -157,7 +157,7 @@ export class PdfController {
 
     res.status(HttpStatus.OK);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="unlocked.pdf"');
+    res.setHeader('Content-Disposition', formatContentDisposition('unlocked.pdf'));
     res.send(unlockedBuffer);
   }
 
@@ -213,7 +213,7 @@ export class PdfController {
 
     res.status(HttpStatus.OK);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="merged.pdf"');
+    res.setHeader('Content-Disposition', formatContentDisposition('merged.pdf'));
     res.send(mergedBuffer);
   }
 
@@ -273,10 +273,7 @@ export class PdfController {
 
     res.status(HttpStatus.OK);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename="extracted.pdf"',
-    );
+    res.setHeader('Content-Disposition', formatContentDisposition('extracted.pdf'));
     res.send(extractedBuffer);
   }
 
@@ -293,21 +290,6 @@ export class PdfController {
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     description: 'PDF 파일 및 비밀번호(선택)',
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-          description: '낱장 분할할 PDF 파일 (최대 50MB)',
-        },
-        password: {
-          type: 'string',
-          description: '암호화된 PDF인 경우 비밀번호 (선택)',
-        },
-      },
-      required: ['file'],
-    },
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -323,10 +305,7 @@ export class PdfController {
 
     res.status(HttpStatus.OK);
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename="split-pages.zip"',
-    );
+    res.setHeader('Content-Disposition', formatContentDisposition('split-pages.zip'));
     res.send(zipBuffer);
   }
 }

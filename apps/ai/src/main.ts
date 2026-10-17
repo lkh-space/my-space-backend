@@ -12,22 +12,30 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
-  // Swagger UI 설정
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('My Space AI Workspace API')
-    .setDescription(
-      'J.A.R.V.I.S. Neural Core 실시간 음성 비서, Qdrant 시맨틱 검색, SSE 스트리밍 API',
-    )
-    .setVersion('0.1.0')
-    .addTag('J.A.R.V.I.S. Voice & Neural Core', '실시간 음성/텍스트 SSE 스트리밍, 발화 인터럽트 및 오디오 서빙')
-    .addTag('J.A.R.V.I.S. Neural Sessions', '신경망 스트림 세션 라이프사이클 관리')
-    .addTag('AI Chat', 'Gemini / Ollama 실시간 스트리밍 대화 및 Tool 연동')
-    .addTag('AI Search', 'Qdrant 벡터 기반 마크다운 문서 시맨틱 검색')
-    .addTag('System', '서버 헬스체크 및 런타임 상태 진단')
-    .build();
+  // Swagger UI 설정: 로컬 개발 환경 또는 ENABLE_SWAGGER=true 명시 시에만 활성화
+  const isSwaggerEnabled =
+    configService.get<string>('IS_LOCAL') === 'true' ||
+    process.env.IS_LOCAL === 'true' ||
+    configService.get<string>('ENABLE_SWAGGER') === 'true' ||
+    process.env.ENABLE_SWAGGER === 'true';
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document);
+  if (isSwaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('My Space AI Workspace API')
+      .setDescription(
+        'J.A.R.V.I.S. Neural Core 실시간 음성 비서, Qdrant 시맨틱 검색, SSE 스트리밍 API',
+      )
+      .setVersion('0.1.0')
+      .addTag('J.A.R.V.I.S. Voice & Neural Core', '실시간 음성/텍스트 SSE 스트리밍, 발화 인터럽트 및 오디오 서빙')
+      .addTag('J.A.R.V.I.S. Neural Sessions', '신경망 스트림 세션 라이프사이클 관리')
+      .addTag('AI Chat', 'Gemini / Ollama 실시간 스트리밍 대화 및 Tool 연동')
+      .addTag('AI Search', 'Qdrant 벡터 기반 마크다운 문서 시맨틱 검색')
+      .addTag('System', '서버 헬스체크 및 런타임 상태 진단')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   // CORS 설정 (API 서버와 동일한 안전한 화이트리스트 및 브라우저 헤더 적용)
   const defaultOrigins = [

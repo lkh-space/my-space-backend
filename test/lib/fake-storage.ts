@@ -60,6 +60,12 @@ export class FakeMinioService {
     this.storage.delete(`${bucket}:${key}`);
   }
 
+  async deleteObjects(bucket: string, keys: string[]): Promise<void> {
+    for (const key of keys) {
+      this.storage.delete(`${bucket}:${key}`);
+    }
+  }
+
   clear(): void {
     this.storage.clear();
   }

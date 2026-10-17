@@ -79,7 +79,7 @@ describe('Markdown Assets API (E2E)', () => {
       ).expect(200);
 
       expect(downloadRes.headers['content-type']).toContain('image/svg+xml');
-      expect(downloadRes.headers['content-disposition']).toBe('attachment');
+      expect(downloadRes.headers['content-disposition']).toContain('attachment');
       expect(downloadRes.headers['cache-control']).toBe('private, max-age=86400');
       expect(downloadRes.headers['content-security-policy']).toBe(
         "default-src 'none'; style-src 'unsafe-inline'; sandbox",

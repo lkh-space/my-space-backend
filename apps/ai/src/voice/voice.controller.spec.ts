@@ -80,34 +80,26 @@ describe('VoiceController (BDD 단위 테스트)', () => {
       expect(mockRes.end).toHaveBeenCalled();
     });
 
-    it('스트림 시작 전 도메인 예외 발생 시 즉시 해당 상태 코드의 JSON 실패 응답을 반환해야 한다', async () => {
+    it('스트림 시작 전 도메인 예외 발생 시 예외를 던져 AllExceptionsFilter에 위임해야 한다', async () => {
       // given
       vi.spyOn(mockVoiceService, 'streamVoiceQuery').mockImplementation(() => {
         throw new AudioFileNotFoundException('audio-not-found');
       });
 
-      const jsonMock = vi.fn();
       const mockReq = {
         on: vi.fn(),
       } as unknown as Request;
       const mockRes = {
-        status: vi.fn().mockReturnValue({ json: jsonMock }),
-        json: jsonMock,
+        status: vi.fn().mockReturnThis(),
+        setHeader: vi.fn().mockReturnThis(),
       } as unknown as Response;
 
       const rawBody = { sessionId: 'invalid-session' };
 
-      // when
-      await controller.streamVoice(mockUser, rawBody, undefined, mockReq, mockRes);
-
-      // then
-      expect(mockRes.status).toHaveBeenCalledWith(404);
-      expect(jsonMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          statusCode: 404,
-          message: expect.stringContaining('audio-not-found'),
-        }),
-      );
+      // when & then
+      await expect(
+        controller.streamVoice(mockUser, rawBody, undefined, mockReq, mockRes),
+      ).rejects.toThrow(AudioFileNotFoundException);
     });
   });
 

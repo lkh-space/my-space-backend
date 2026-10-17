@@ -106,7 +106,7 @@ describe('PdfController (BDD 단위 테스트)', () => {
       );
       expect(res.setHeader).toHaveBeenCalledWith(
         'Content-Disposition',
-        'attachment; filename="unlocked.pdf"',
+        'attachment; filename="unlocked.pdf"; filename*=UTF-8\'\'unlocked.pdf',
       );
       expect(res.send).toHaveBeenCalledWith(unlockedPdf);
     });
@@ -131,7 +131,7 @@ describe('PdfController (BDD 단위 테스트)', () => {
       );
       expect(res.setHeader).toHaveBeenCalledWith(
         'Content-Disposition',
-        'attachment; filename="merged.pdf"',
+        'attachment; filename="merged.pdf"; filename*=UTF-8\'\'merged.pdf',
       );
       expect(res.send).toHaveBeenCalledWith(mergedPdf);
     });
@@ -156,7 +156,7 @@ describe('PdfController (BDD 단위 테스트)', () => {
       );
       expect(res.setHeader).toHaveBeenCalledWith(
         'Content-Disposition',
-        'attachment; filename="extracted.pdf"',
+        'attachment; filename="extracted.pdf"; filename*=UTF-8\'\'extracted.pdf',
       );
       expect(res.send).toHaveBeenCalledWith(extractedPdf);
     });
@@ -181,7 +181,7 @@ describe('PdfController (BDD 단위 테스트)', () => {
       );
       expect(res.setHeader).toHaveBeenCalledWith(
         'Content-Disposition',
-        'attachment; filename="split-pages.zip"',
+        'attachment; filename="split-pages.zip"; filename*=UTF-8\'\'split-pages.zip',
       );
       expect(res.send).toHaveBeenCalledWith(zipBytes);
     });

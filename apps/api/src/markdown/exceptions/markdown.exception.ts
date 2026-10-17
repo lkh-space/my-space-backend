@@ -1,5 +1,9 @@
 import { BaseDomainException } from '@app/common/exceptions/domain.exception.js';
-export { FolderNotFoundException } from '@app/common';
+export {
+  FolderNotFoundException,
+  DocumentNotFoundException,
+  StorageObjectNotFoundException,
+} from '@app/common';
 
 /**
  * 동일 부모 경로에 동일 이름의 폴더가 이미 존재하는 경우 발생하는 예외
@@ -30,19 +34,9 @@ export class FolderCyclicDependencyException extends BaseDomainException {
 }
 
 /**
- * 문서를 찾을 수 없는 경우 발생하는 예외
- */
-export class DocumentNotFoundException extends BaseDomainException {
-  readonly code = 'DOCUMENT_NOT_FOUND';
-
-  constructor(documentId: string) {
-    super(`문서를 찾을 수 없습니다: ${documentId}`, { documentId });
-  }
-}
-
-/**
  * 리비전 이력을 찾을 수 없는 경우 발생하는 예외
  */
+
 export class RevisionNotFoundException extends BaseDomainException {
   readonly code = 'REVISION_NOT_FOUND';
 
@@ -98,5 +92,28 @@ export class SearchUnavailableException extends BaseDomainException {
     );
   }
 }
+
+/**
+ * 에셋 접근 권한이 없거나 격리 위반 시 발생하는 예외
+ */
+export class AssetAccessDeniedException extends BaseDomainException {
+  readonly code = 'ASSET_ACCESS_DENIED';
+
+  constructor(message = '해당 에셋에 대한 접근 권한이 없습니다.') {
+    super(message);
+  }
+}
+
+/**
+ * 업로드/가져오기한 마크다운 파일이 유효하지 않거나 누락된 경우 발생하는 예외
+ */
+export class InvalidMarkdownFileException extends BaseDomainException {
+  readonly code = 'INVALID_MARKDOWN_FILE';
+
+  constructor(message = '마크다운 파일이 제공되지 않았거나 내용이 유효하지 않습니다.') {
+    super(message);
+  }
+}
+
 
 

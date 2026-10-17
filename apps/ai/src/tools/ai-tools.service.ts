@@ -1,11 +1,16 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
+import {
+  ToolNotFoundException,
+  DocumentNotFoundException,
+} from '@app/common';
 import { MarkdownWriterService } from '@app/markdown-core';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { QdrantService } from '@app/storage/qdrant/qdrant.service.js';
 import { ProviderFactory } from '../providers/provider.factory.js';
 import type { LlmToolDefinition } from '../providers/llm.provider.interface.js';
+
 
 const searchMyDocumentsArgsSchema = z.object({
   query: z
@@ -169,8 +174,9 @@ export class AiToolsService {
         );
       }
       default:
-        throw new NotFoundException(`지원하지 않는 도구 이름입니다: ${name}`);
+        throw new ToolNotFoundException(name);
     }
+
   }
 
   private async searchMyDocuments(
@@ -214,8 +220,9 @@ export class AiToolsService {
     });
 
     if (!doc) {
-      throw new NotFoundException(`문서를 찾을 수 없습니다: ${documentId}`);
+      throw new DocumentNotFoundException(documentId);
     }
+
 
     const raw = await this.minioService.getObjectAsString(
       this.minioService.docsBucket,

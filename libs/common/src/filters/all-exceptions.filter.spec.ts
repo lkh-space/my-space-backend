@@ -42,6 +42,7 @@ describe('AllExceptionsFilter', () => {
   let mockResponse: {
     status: ReturnType<typeof vi.fn>;
     json: ReturnType<typeof vi.fn>;
+    setHeader: ReturnType<typeof vi.fn>;
   };
   let mockArgumentsHost: ArgumentsHost;
   const originalEnv = process.env.IS_LOCAL;
@@ -59,11 +60,15 @@ describe('AllExceptionsFilter', () => {
       originalUrl: '/api/v1/test',
       method: 'POST',
       url: '/api/v1/test',
+      headers: {
+        'x-request-id': 'req-test-123',
+      },
     };
 
     mockResponse = {
       status: vi.fn().mockReturnThis(),
       json: vi.fn().mockReturnThis(),
+      setHeader: vi.fn().mockReturnThis(),
     };
 
     mockArgumentsHost = {
@@ -506,6 +511,36 @@ describe('AllExceptionsFilter', () => {
         expect.objectContaining({
           statusCode: HttpStatus.NOT_FOUND,
           code: 'DATABASE_RECORD_NOT_FOUND',
+        }),
+      );
+    });
+  });
+
+  describe('RFC 7807 (Problem Details) 표준 호환성', () => {
+    it('Content-Type 헤더가 application/problem+json으로 설정되고 RFC 7807 규격 필드를 포함해야 한다', () => {
+      // given
+      process.env.IS_LOCAL = 'false';
+      const exception = new ResourceNotFoundException('도큐먼트를 찾을 수 없습니다.');
+
+      // when
+      filter.catch(exception, mockArgumentsHost);
+
+      // then
+      expect(mockResponse.setHeader).toHaveBeenCalledWith(
+        'Content-Type',
+        'application/problem+json',
+      );
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'https://api.myspace.local/errors/resource-not-found',
+          title: 'Not Found',
+          status: HttpStatus.NOT_FOUND,
+          detail: '도큐먼트를 찾을 수 없습니다.',
+          instance: '/api/v1/test',
+          traceId: 'req-test-123',
+          statusCode: HttpStatus.NOT_FOUND,
+          code: 'RESOURCE_NOT_FOUND',
         }),
       );
     });

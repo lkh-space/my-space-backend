@@ -8,7 +8,9 @@ import { TagService } from './tag.service.js';
 import {
   DocumentNotFoundException,
   DocumentVersionConflictException,
+  InvalidMarkdownFileException,
 } from '../exceptions/markdown.exception.js';
+
 
 describe('DocumentService', () => {
   let service: DocumentService;
@@ -46,6 +48,7 @@ describe('DocumentService', () => {
       putObject: vi.fn().mockResolvedValue(undefined),
       getObjectAsString: vi.fn(),
       deleteObject: vi.fn().mockResolvedValue(undefined),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
     } as unknown as MinioService;
 
     openSearchService = {
@@ -428,10 +431,29 @@ describe('DocumentService', () => {
       expect(result.title).toBe('Imported Document');
       expect(result.tags).toEqual(['nestjs', 'test']);
     });
+
+    it('.md 파일이 전달되지 않거나 버퍼가 비어있으면 InvalidMarkdownFileException을 던져야 한다 (L-2)', async () => {
+      // given
+      const ownerId = 'admin';
+
+      // when & then
+      await expect(service.importMarkdown(ownerId, undefined)).rejects.toThrow(
+        InvalidMarkdownFileException,
+      );
+
+      const emptyFile = {
+        buffer: Buffer.from(''),
+      } as Express.Multer.File;
+
+      await expect(service.importMarkdown(ownerId, emptyFile)).rejects.toThrow(
+        InvalidMarkdownFileException,
+      );
+    });
   });
 
+
   describe('deleteDocument (M-2 DB 선행 삭제 원자성)', () => {
-    it('문서 삭제 시 DB 레코드를 먼저 삭제하고 이후 MinIO 객체 및 OpenSearch 색인을 정리해야 한다', async () => {
+    it('문서 삭제 시 DB 레코드를 먼저 삭제하고 이후 MinIO 객체(최신+리비전 일괄) 및 OpenSearch 색인을 정리해야 한다', async () => {
       // given
       const ownerId = 'admin';
       const documentId = 'doc-1';
@@ -449,7 +471,7 @@ describe('DocumentService', () => {
         return {} as never;
       });
 
-      vi.mocked(minioService.deleteObject).mockImplementation(async () => {
+      vi.mocked(minioService.deleteObjects).mockImplementation(async () => {
         callOrder.push('MINIO_DELETE');
       });
 
@@ -464,6 +486,10 @@ describe('DocumentService', () => {
       expect(callOrder[0]).toBe('DB_DELETE');
       expect(callOrder).toContain('MINIO_DELETE');
       expect(callOrder).toContain('OPENSEARCH_DELETE');
+      expect(minioService.deleteObjects).toHaveBeenCalledWith(
+        'my-space-markdown',
+        ['docs/admin/doc-1/current.md', 'docs/admin/doc-1/revisions/v1.md'],
+      );
       expect(rabbitmqService.publish).toHaveBeenCalledWith(
         'markdown-indexing-queue',
         expect.objectContaining({ type: 'DELETE', documentId }),
@@ -491,7 +517,7 @@ describe('DocumentService', () => {
         service.deleteDocument(ownerId, documentId),
       ).rejects.toThrow('DB Foreign Key Conflict');
 
-      expect(minioService.deleteObject).not.toHaveBeenCalled();
+      expect(minioService.deleteObjects).not.toHaveBeenCalled();
       expect(openSearchService.deleteDocument).not.toHaveBeenCalled();
     });
   });
@@ -518,6 +544,45 @@ describe('DocumentService', () => {
       // then
       expect(result.filename).toBe('Test_Document.md');
       expect(result.content).toBe('# Markdown Content');
+    });
+  });
+
+  describe('exportPdf', () => {
+    it('긴 텍스트와 여러 헤더가 포함된 문서를 동적 줄바꿈 및 페이지네이션을 거쳐 PDF 버퍼로 정상 생성해야 한다', async () => {
+      // given
+      const ownerId = 'admin';
+      const documentId = 'doc-pdf-1';
+
+      // 100자가 넘는 긴 문장과 다단계 헤더
+      const longText = 'This is a very long line of text intended to test the dynamic line wrapping capability of the PDF export service. '.repeat(5);
+      const markdownContent = `# Main Title\n## Sub Title\n${longText}\n\nAnother paragraph with multiple words.`;
+
+      vi.mocked(prisma.document.findFirst).mockResolvedValueOnce({
+        id: documentId,
+        title: 'Project/Spec/Report',
+        currentVersion: 2,
+        folderId: null,
+        ownerId,
+        objectKey: 'docs/admin/doc-pdf-1/current.md',
+        createdAt: new Date('2026-10-01T00:00:00Z'),
+        updatedAt: new Date('2026-10-05T12:00:00Z'),
+        tags: [],
+        folder: null,
+      } as never);
+
+      vi.mocked(minioService.getObjectAsString).mockResolvedValueOnce(markdownContent);
+
+      // when
+      const result = await service.exportPdf(ownerId, documentId);
+
+      // then
+      expect(result.filename).toBe('Project_Spec_Report.pdf');
+      expect(result.buffer).toBeDefined();
+      expect(result.buffer.length).toBeGreaterThan(100);
+
+      // PDF 매직 바이트 검증 (%PDF-)
+      const pdfHeader = Buffer.from(result.buffer.slice(0, 5)).toString('utf-8');
+      expect(pdfHeader).toBe('%PDF-');
     });
   });
 });

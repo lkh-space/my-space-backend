@@ -4,7 +4,8 @@ import { QpdfEngine } from './engines/qpdf.engine.js';
 import { PdflibEngine } from './engines/pdflib.engine.js';
 import { ZipEngine } from './engines/zip.engine.js';
 import {
-  PdfFileCountException,
+  PdfMinFilesException,
+  PdfMaxFilesException,
   PdfNotProtectedException,
   PdfPasswordRequiredException,
 } from './exceptions/pdf.exception.js';
@@ -144,13 +145,25 @@ describe('PdfService (BDD 단위 테스트)', () => {
   });
 
   describe('merge (UC-P01: PDF 병합)', () => {
-    it('파일 개수가 2개 미만인 경우 PdfFileCountException 예외를 던진다', async () => {
+    it('파일 개수가 2개 미만인 경우 PdfMinFilesException 예외를 던진다 (L-8 불변성 준수)', async () => {
       // given
       const singleFile = [{ buffer: sampleBuffer }];
 
       // when & then
       await expect(service.merge(singleFile)).rejects.toThrow(
-        PdfFileCountException,
+        PdfMinFilesException,
+      );
+    });
+
+    it('파일 개수가 20개 초과인 경우 PdfMaxFilesException 예외를 던진다 (L-8 불변성 준수)', async () => {
+      // given
+      const manyFiles = Array.from({ length: 21 }, () => ({
+        buffer: sampleBuffer,
+      }));
+
+      // when & then
+      await expect(service.merge(manyFiles)).rejects.toThrow(
+        PdfMaxFilesException,
       );
     });
 

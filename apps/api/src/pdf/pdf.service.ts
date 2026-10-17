@@ -4,7 +4,8 @@ import { PdflibEngine } from './engines/pdflib.engine.js';
 import { ZipEngine } from './engines/zip.engine.js';
 import { parsePageRanges } from './utils/page-range.parser.js';
 import {
-  PdfFileCountException,
+  PdfMinFilesException,
+  PdfMaxFilesException,
   PdfNotProtectedException,
   PdfPasswordRequiredException,
 } from './exceptions/pdf.exception.js';
@@ -99,10 +100,10 @@ export class PdfService {
    */
   async merge(files: MergeFileInput[]): Promise<Buffer> {
     if (files.length < 2) {
-      throw new PdfFileCountException('MIN', files.length);
+      throw new PdfMinFilesException(files.length);
     }
     if (files.length > 20) {
-      throw new PdfFileCountException('MAX', files.length);
+      throw new PdfMaxFilesException(files.length);
     }
 
     const preparedBuffers: Buffer[] = [];

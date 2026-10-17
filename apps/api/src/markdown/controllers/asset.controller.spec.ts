@@ -108,7 +108,10 @@ describe('AssetController (에셋 보안 헤더 및 스트리밍 단위 테스�
 
       // then
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'image/svg+xml');
-      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment');
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="test.svg"; filename*=UTF-8\'\'test.svg',
+      );
       expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, max-age=86400');
       expect(res.setHeader).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
       expect(res.setHeader).toHaveBeenCalledWith(

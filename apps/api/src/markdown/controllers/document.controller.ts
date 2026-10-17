@@ -31,6 +31,7 @@ import {
   type AuthUser,
 } from '@app/common/guards/remote-user.guard.js';
 import { CurrentUser } from '@app/common/decorators/current-user.decorator.js';
+import { formatContentDisposition } from '@app/common/utils/content-disposition.util.js';
 import { DocumentService } from '../services/document.service.js';
 import {
   CreateDocumentDto,
@@ -218,10 +219,7 @@ export class DocumentController {
     );
 
     res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(filename)}"`,
-    );
+    res.setHeader('Content-Disposition', formatContentDisposition(filename));
     res.send(content);
   }
 
@@ -241,10 +239,7 @@ export class DocumentController {
     );
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(filename)}"`,
-    );
+    res.setHeader('Content-Disposition', formatContentDisposition(filename));
     res.send(Buffer.from(buffer));
   }
 }

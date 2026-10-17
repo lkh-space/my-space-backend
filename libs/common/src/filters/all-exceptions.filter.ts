@@ -13,22 +13,60 @@ import { checkIsLocal } from '../logger/logger.config.js';
 import { resolveDomainHttpStatus } from './domain-error-http.map.js';
 
 /**
- * 클라이언트 반환 표준 에러 응답 규격 DTO
+ * 클라이언트 반환 표준 에러 응답 규격 DTO (RFC 7807 Problem Details 호환)
  */
 export interface ErrorResponseDto {
-  statusCode: number;
+  // RFC 7807 표준 필드
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  instance: string;
+
+  // 프로젝트 표준 확장 필드
   code: string;
-  message: string;
+  traceId?: string;
   timestamp: string;
-  path: string;
   details?: Record<string, unknown>;
   stack?: string;
+
+  // 레거시 필드 (기존 클라이언트 및 E2E 테스트 호환성 유지)
+  statusCode: number;
+  message: string;
+  path: string;
+}
+
+function getHttpStatusTitle(status: HttpStatus): string {
+  switch (status) {
+    case HttpStatus.BAD_REQUEST:
+      return 'Bad Request';
+    case HttpStatus.UNAUTHORIZED:
+      return 'Unauthorized';
+    case HttpStatus.FORBIDDEN:
+      return 'Forbidden';
+    case HttpStatus.NOT_FOUND:
+      return 'Not Found';
+    case HttpStatus.CONFLICT:
+      return 'Conflict';
+    case HttpStatus.UNPROCESSABLE_ENTITY:
+      return 'Unprocessable Entity';
+    case HttpStatus.PAYLOAD_TOO_LARGE:
+      return 'Payload Too Large';
+    case HttpStatus.INTERNAL_SERVER_ERROR:
+      return 'Internal Server Error';
+    case HttpStatus.SERVICE_UNAVAILABLE:
+      return 'Service Unavailable';
+    case HttpStatus.BAD_GATEWAY:
+      return 'Bad Gateway';
+    default:
+      return 'Error';
+  }
 }
 
 /**
  * 전역 예외 처리 필터 (AllExceptionsFilter)
  * 애플리케이션의 모든 예외(ApiException, BaseDomainException, HttpException, Error)를 가로채어
- * 표준화된 JSON 에러 응답을 클라이언트에 반환하고, Pino 로거를 통해 로깅합니다.
+ * RFC 7807(Problem Details) 표준 JSON 에러 응답을 반환하고 로깅합니다.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -50,15 +88,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const stack = exception instanceof Error ? exception.stack : undefined;
     const path = request?.originalUrl || request?.url || '';
     const method = request?.method || '';
+    const rawTraceId =
+      request?.headers?.['x-request-id'] ||
+      request?.headers?.['traceparent'] ||
+      request?.headers?.['x-trace-id'];
+    const traceId = typeof rawTraceId === 'string' ? rawTraceId : undefined;
 
     // 예외 필터로 들어온 모든 에러는 error 레벨로 로깅
-    // Loki/Grafana에서 500 이상 서버 에러만 필터링할 수 있도록 status/statusCode 필드 제공
     const logPayload = {
       status,
       statusCode: status,
       code,
       path,
       method,
+      traceId,
       details,
       err: exception instanceof Error ? exception : undefined,
     };
@@ -66,17 +109,29 @@ export class AllExceptionsFilter implements ExceptionFilter {
     this.logger.error(logPayload, `[${method}] ${path} ${status} - ${message}`);
 
     const errorResponse: ErrorResponseDto = {
-      statusCode: status,
+      type: `https://api.myspace.local/errors/${code.toLowerCase().replace(/_/g, '-')}`,
+      title: getHttpStatusTitle(status),
+      status,
       code,
-      message,
+      detail: message,
+      instance: path,
+      ...(traceId && { traceId }),
       timestamp: new Date().toISOString(),
-      path,
       ...(details && { details }),
       ...(isLocal && stack && { stack }),
+
+      // 레거시 호환 필드
+      statusCode: status,
+      message,
+      path,
     };
 
-    response.status(status).json(errorResponse);
+    response
+      .status(status)
+      .setHeader('Content-Type', 'application/problem+json')
+      .json(errorResponse);
   }
+
 
   /**
    * 발생한 예외 객체를 분석하여 정규화된 에러 정보(HTTP 상태, 에러 코드, 메시지, 상세)를 추출합니다.
@@ -121,8 +176,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else if (typeof res === 'object' && res !== null) {
         const resObj = res as Record<string, unknown>;
         message = (resObj.message as string) || exception.message;
-        details = resObj;
+        const { message: _m, statusCode: _s, error: _e, ...rest } = resObj;
+        if (Object.keys(rest).length > 0) {
+          details = rest;
+        }
       }
+
 
       return { status, code, message, details };
     }

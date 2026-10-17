@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiToolsService } from './ai-tools.service.js';
-import { NotFoundException } from '@nestjs/common';
-import { FolderNotFoundException } from '@app/common';
+import {
+  FolderNotFoundException,
+  ToolNotFoundException,
+  DocumentNotFoundException,
+} from '@app/common';
+
 import type { MarkdownWriterService } from '@app/markdown-core';
 import type { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import type { MinioService } from '@app/storage/minio/minio.service.js';
@@ -204,7 +208,7 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
       expect(result.length).toBeLessThan(12_000);
     });
 
-    it('문서가 존재하지 않거나 권한이 없으면 NotFoundException을 던진다', async () => {
+    it('문서가 존재하지 않거나 권한이 없으면 DocumentNotFoundException을 던진다', async () => {
       // given
       (mockPrisma.document.findFirst as any).mockResolvedValue(null);
 
@@ -215,8 +219,9 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
           { documentId: 'doc-999' },
           'user-1',
         ),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(DocumentNotFoundException);
     });
+
   });
 
   describe('save_to_markdown 도구 실행', () => {
@@ -304,10 +309,11 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
     });
   });
 
-  it('지원하지 않는 도구 이름 호출 시 NotFoundException을 던진다', async () => {
+  it('지원하지 않는 도구 이름 호출 시 ToolNotFoundException을 던진다', async () => {
     // given & when & then
     await expect(
       service.executeTool('unknown_tool', {}, 'user-1'),
-    ).rejects.toThrow(NotFoundException);
+    ).rejects.toThrow(ToolNotFoundException);
   });
 });
+

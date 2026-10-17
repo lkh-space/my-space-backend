@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AssetService } from './asset.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
-import { InvalidAssetException } from '../exceptions/markdown.exception.js';
-import { ForbiddenException } from '@nestjs/common';
+import { InvalidAssetException, AssetAccessDeniedException } from '../exceptions/markdown.exception.js';
+
 import { Readable } from 'node:stream';
 
 describe('AssetService', () => {
@@ -76,7 +76,7 @@ describe('AssetService', () => {
   });
 
   describe('getAssetStream', () => {
-    it('다른 사용자의 에셋 경로에 접근하면 ForbiddenException을 던져야 한다', async () => {
+    it('다른 사용자의 에셋 경로에 접근하면 AssetAccessDeniedException을 던져야 한다', async () => {
       // given
       const ownerId = 'user-a';
       const otherUserKey = 'images/user-b/uuid-image.png';
@@ -84,8 +84,9 @@ describe('AssetService', () => {
       // when & then
       await expect(
         service.getAssetStream(ownerId, otherUserKey),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(AssetAccessDeniedException);
     });
+
 
     it('자신의 에셋 경로에 접근하면 스트림을 정상 반환해야 한다', async () => {
       // given

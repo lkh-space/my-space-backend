@@ -40,7 +40,6 @@ import {
 } from './dto/voice-stream.dto.js';
 import { AudioFileNotFoundException } from './exceptions/voice.exception.js';
 import { BaseDomainException } from '@app/common/exceptions/domain.exception.js';
-import { resolveDomainHttpStatus } from '@app/common/filters/domain-error-http.map.js';
 
 export const MAX_AUDIO_FILE_SIZE = 25 * 1024 * 1024; // 25MB (BR-A02)
 
@@ -221,23 +220,10 @@ export class VoiceController {
       this.logger.error(`[VoiceController] 스트리밍 중 예외: ${message}`);
 
       if (!headersSent) {
-        // 아직 SSE 헤더를 전송하지 않은 상태라면 즉시 명확한 HTTP 에러 응답(JSON) 반환
-        const statusCode =
-          err instanceof BaseDomainException
-            ? resolveDomainHttpStatus(err.code)
-            : HttpStatus.INTERNAL_SERVER_ERROR;
-
-        res.status(statusCode).json({
-          statusCode,
-          message:
-            err instanceof BaseDomainException
-              ? err.message
-              : '스트리밍 처리 중 서버 에러가 발생했습니다.',
-          error: err instanceof Error ? err.name : 'Internal Server Error',
-          timestamp: new Date().toISOString(),
-        });
-        return;
+        // 아직 SSE 헤더를 전송하지 않은 상태라면 전역 AllExceptionsFilter를 통해 표준 RFC 7807 응답 처리
+        throw err;
       }
+
 
       // 이미 SSE 스트림 헤더가 전송된 경우, 표준화된 에러 코드 전송
       if (!ac.signal.aborted && !res.writableEnded) {
