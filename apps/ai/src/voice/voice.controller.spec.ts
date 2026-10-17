@@ -1,5 +1,5 @@
 import type { AuthUser } from '@app/common/guards/remote-user.guard.js';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioFileNotFoundException } from './exceptions/voice.exception.js';
 import type { JarvisVoiceService } from './jarvis-voice.service.js';
@@ -53,8 +53,12 @@ describe('VoiceController (BDD 단위 테스트)', () => {
         textQuery: '테스트 질의',
       };
 
+      const mockReq = {
+        on: vi.fn(),
+      } as unknown as Request;
+
       // when
-      await controller.streamVoice(mockUser, rawBody, undefined, mockRes);
+      await controller.streamVoice(mockUser, rawBody, undefined, mockReq, mockRes);
 
       // then
       expect(mockRes.setHeader).toHaveBeenCalledWith(
@@ -64,6 +68,10 @@ describe('VoiceController (BDD 단위 테스트)', () => {
       expect(mockRes.setHeader).toHaveBeenCalledWith(
         'Cache-Control',
         'no-cache, no-transform',
+      );
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'X-Accel-Buffering',
+        'no',
       );
       expect(writtenData).toEqual([
         'event: token\ndata: {"delta":"hello"}\n\n',
@@ -79,6 +87,9 @@ describe('VoiceController (BDD 단위 테스트)', () => {
       });
 
       const jsonMock = vi.fn();
+      const mockReq = {
+        on: vi.fn(),
+      } as unknown as Request;
       const mockRes = {
         status: vi.fn().mockReturnValue({ json: jsonMock }),
         json: jsonMock,
@@ -87,7 +98,7 @@ describe('VoiceController (BDD 단위 테스트)', () => {
       const rawBody = { sessionId: 'invalid-session' };
 
       // when
-      await controller.streamVoice(mockUser, rawBody, undefined, mockRes);
+      await controller.streamVoice(mockUser, rawBody, undefined, mockReq, mockRes);
 
       // then
       expect(mockRes.status).toHaveBeenCalledWith(404);

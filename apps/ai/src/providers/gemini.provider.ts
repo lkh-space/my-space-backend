@@ -7,6 +7,8 @@ import type {
   LlmMessage,
   LlmToolDefinition,
   LlmResponse,
+  LlmToolCall,
+  LlmStreamChunk,
 } from './llm.provider.interface.js';
 
 @Injectable()
@@ -52,6 +54,7 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
   async generate(
     messages: LlmMessage[],
     tools?: LlmToolDefinition[],
+    signal?: AbortSignal,
   ): Promise<LlmResponse> {
     const client = this.ensureClient();
 
@@ -69,6 +72,9 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     }));
 
     const config: Record<string, unknown> = {};
+    if (signal) {
+      config.abortSignal = signal;
+    }
     if (functionDeclarations && functionDeclarations.length > 0) {
       config.tools = [{ functionDeclarations }];
     }
@@ -110,7 +116,8 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
   async *stream(
     messages: LlmMessage[],
     tools?: LlmToolDefinition[],
-  ): AsyncGenerator<string, void, unknown> {
+    signal?: AbortSignal,
+  ): AsyncGenerator<LlmStreamChunk, void, unknown> {
     const client = this.ensureClient();
 
     const contents = messages.map((m) => ({
@@ -125,6 +132,9 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     }));
 
     const config: Record<string, unknown> = {};
+    if (signal) {
+      config.abortSignal = signal;
+    }
     if (functionDeclarations && functionDeclarations.length > 0) {
       config.tools = [{ functionDeclarations }];
     }
@@ -137,6 +147,9 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
         config,
       });
     } catch (err) {
+      if (signal?.aborted) {
+        return;
+      }
       if (this.model !== 'gemini-3.5-flash') {
         this.logger.warn(
           `[GeminiProvider] ${this.model} 호출 실패로 gemini-3.5-flash로 자동 폴백합니다: ${err}`,
@@ -152,9 +165,31 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     }
 
     for await (const chunk of streamResponse) {
-      const text = chunk.text;
-      if (text) {
-        yield text;
+      if (signal?.aborted) break;
+
+      const candidate = chunk.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+
+      let text = '';
+      const toolCalls: LlmToolCall[] = [];
+
+      for (const part of parts) {
+        if (part.text) {
+          text += part.text;
+        }
+        if (part.functionCall) {
+          toolCalls.push({
+            id: part.functionCall.name || 'call_id',
+            name: part.functionCall.name || '',
+            args: (part.functionCall.args as Record<string, unknown>) || {},
+          });
+        }
+      }
+
+      if (toolCalls.length > 0) {
+        yield { toolCalls, text: text || undefined };
+      } else if (text || chunk.text) {
+        yield { text: text || chunk.text };
       }
     }
   }

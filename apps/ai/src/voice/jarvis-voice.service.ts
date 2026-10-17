@@ -178,7 +178,11 @@ export class JarvisVoiceService {
       let tokensUsed = 0;
 
       try {
-        for await (const token of provider.stream(messages)) {
+        for await (const chunk of provider.stream(
+          messages,
+          undefined,
+          abortController.signal,
+        )) {
           if (abortController.signal.aborted) {
             this.logger.log(`[VoiceService] 스트림 중단 감지 (세션 ${sessionId})`);
             yield {
@@ -187,6 +191,9 @@ export class JarvisVoiceService {
             };
             return;
           }
+
+          const token = typeof chunk === 'string' ? chunk : chunk?.text;
+          if (!token) continue;
 
           fullAnswer += token;
           tokensUsed += Math.max(1, Math.round(token.length / 3));

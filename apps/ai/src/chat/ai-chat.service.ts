@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProviderFactory } from '../providers/provider.factory.js';
 import { AiToolsService } from '../tools/ai-tools.service.js';
-import type { LlmMessage } from '../providers/llm.provider.interface.js';
+import type { LlmMessage, LlmToolCall } from '../providers/llm.provider.interface.js';
 import {
   AiChatDto,
   AiChatResponseDto,
@@ -97,25 +97,46 @@ export class AiChatService {
   }
 
   /**
-   * 실시간 SSE 스트리밍 대화
+   * 실시간 SSE 스트리밍 대화 (단일 stream 호출 및 AbortSignal 지원)
    */
   async *streamChat(
     ownerId: string,
     dto: AiChatDto,
+    signal?: AbortSignal,
   ): AsyncGenerator<{ event: string; data: string }, void, unknown> {
     const provider = this.providerFactory.getLlmProvider(dto.provider);
     const tools = dto.enableTools !== false ? this.aiToolsService.getToolDefinitions() : undefined;
+
+    if (signal?.aborted) return;
 
     const messages: LlmMessage[] = [
       { role: 'system', content: this.getSystemPrompt() },
       ...dto.messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
-    // 1차 호출: Function Call 여부 확인을 위해 generate 먼저 수행
-    const initialRes = await provider.generate(messages, tools);
+    const toolCallsToExecute: LlmToolCall[] = [];
 
-    if (initialRes.toolCalls && initialRes.toolCalls.length > 0) {
-      for (const tc of initialRes.toolCalls) {
+    // 1차 스트림 호출 (도구 정의 포함)
+    for await (const chunk of provider.stream(messages, tools, signal)) {
+      if (signal?.aborted) return;
+
+      if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+        toolCallsToExecute.push(...chunk.toolCalls);
+      }
+
+      if (chunk.text) {
+        yield {
+          event: 'token',
+          data: JSON.stringify({ delta: chunk.text }),
+        };
+      }
+    }
+
+    // 도구 호출이 감지된 경우 실행 후 최종 결과 스트리밍
+    if (toolCallsToExecute.length > 0) {
+      for (const tc of toolCallsToExecute) {
+        if (signal?.aborted) return;
+
         yield {
           event: 'tool_start',
           data: JSON.stringify({ name: tc.name, args: tc.args }),
@@ -137,30 +158,24 @@ export class AiChatService {
           content: `도구 ${tc.name} 호출 결과: ${result}`,
         });
       }
-    } else if (initialRes.content) {
-      // 도구 호출 없이 바로 나온 응답
-      yield {
-        event: 'token',
-        data: JSON.stringify({ delta: initialRes.content }),
-      };
+
+      // 도구 실행 결과를 바탕으로 2차 최종 스트리밍 (도구 추가 호출 방지를 위해 tools 미전달)
+      for await (const chunk of provider.stream(messages, undefined, signal)) {
+        if (signal?.aborted) return;
+        if (chunk.text) {
+          yield {
+            event: 'token',
+            data: JSON.stringify({ delta: chunk.text }),
+          };
+        }
+      }
+    }
+
+    if (!signal?.aborted) {
       yield {
         event: 'done',
         data: JSON.stringify({ finished: true }),
       };
-      return;
     }
-
-    // 도구 결과가 반영된 최종 스트리밍 생성
-    for await (const token of provider.stream(messages)) {
-      yield {
-        event: 'token',
-        data: JSON.stringify({ delta: token }),
-      };
-    }
-
-    yield {
-      event: 'done',
-      data: JSON.stringify({ finished: true }),
-    };
   }
 }

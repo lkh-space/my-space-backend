@@ -24,16 +24,23 @@ export interface LlmResponse {
   toolCalls?: LlmToolCall[];
 }
 
+export interface LlmStreamChunk {
+  text?: string;
+  toolCalls?: LlmToolCall[];
+}
+
 export interface LlmProvider {
   readonly name: string;
   generate(
     messages: LlmMessage[],
     tools?: LlmToolDefinition[],
+    signal?: AbortSignal,
   ): Promise<LlmResponse>;
   stream(
     messages: LlmMessage[],
     tools?: LlmToolDefinition[],
-  ): AsyncGenerator<string, void, unknown>;
+    signal?: AbortSignal,
+  ): AsyncGenerator<LlmStreamChunk, void, unknown>;
 }
 
 export interface EmbeddingProvider {

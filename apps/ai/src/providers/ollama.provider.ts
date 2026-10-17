@@ -6,6 +6,7 @@ import type {
   LlmMessage,
   LlmToolDefinition,
   LlmResponse,
+  LlmStreamChunk,
 } from './llm.provider.interface.js';
 
 @Injectable()
@@ -34,6 +35,7 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
   async generate(
     messages: LlmMessage[],
     tools?: LlmToolDefinition[],
+    signal?: AbortSignal,
   ): Promise<LlmResponse> {
     try {
       const body: Record<string, unknown> = {
@@ -53,11 +55,15 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
         }));
       }
 
+      const fetchSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(60000)])
+        : AbortSignal.timeout(60000);
+
       const res = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(60000),
+        signal: fetchSignal,
       });
 
       if (!res.ok) {
@@ -88,6 +94,9 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       };
     } catch (err: unknown) {
+      if (signal?.aborted) {
+        return { content: '' };
+      }
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Ollama 호출 실패: ${message}`);
       throw err;
@@ -100,7 +109,8 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
   async *stream(
     messages: LlmMessage[],
     tools?: LlmToolDefinition[],
-  ): AsyncGenerator<string, void, unknown> {
+    signal?: AbortSignal,
+  ): AsyncGenerator<LlmStreamChunk, void, unknown> {
     try {
       const body: Record<string, unknown> = {
         model: this.model,
@@ -119,11 +129,15 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
         }));
       }
 
+      const fetchSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(120000)])
+        : AbortSignal.timeout(120000);
+
       const res = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(120000),
+        signal: fetchSignal,
       });
 
       if (!res.ok || !res.body) {
@@ -136,6 +150,8 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
       let buffer = '';
 
       while (true) {
+        if (signal?.aborted) break;
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -148,10 +164,27 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
           if (!trimmed) continue;
           try {
             const parsed = JSON.parse(trimmed) as {
-              message?: { content?: string };
+              message?: {
+                content?: string;
+                tool_calls?: Array<{
+                  function?: { name?: string; arguments?: Record<string, unknown> };
+                }>;
+              };
             };
-            if (parsed.message?.content) {
-              yield parsed.message.content;
+
+            const content = parsed.message?.content;
+            const rawToolCalls = parsed.message?.tool_calls || [];
+
+            const toolCalls = rawToolCalls.map((tc, idx) => ({
+              id: `call_${idx}_${tc.function?.name}`,
+              name: tc.function?.name || '',
+              args: tc.function?.arguments || {},
+            }));
+
+            if (toolCalls.length > 0) {
+              yield { toolCalls, text: content || undefined };
+            } else if (content) {
+              yield { text: content };
             }
           } catch {
             // json 파싱 오류 무시
@@ -159,6 +192,9 @@ export class OllamaProvider implements LlmProvider, EmbeddingProvider {
         }
       }
     } catch (err: unknown) {
+      if (signal?.aborted) {
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Ollama 스트리밍 실패: ${message}`);
       throw err;

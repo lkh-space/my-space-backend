@@ -140,4 +140,97 @@ describe('GeminiProvider (BDD 단위 테스트)', () => {
     expect(vector).toEqual(mockVector);
     expect(vector.length).toBe(768);
   });
+
+  describe('stream (실시간 스트리밍)', () => {
+    it('일반 텍스트 스트리밍 시 text 청크를 순차적으로 방출하고 config.abortSignal을 전달한다', async () => {
+      // given
+      const provider = new GeminiProvider(mockConfigService);
+      async function* mockStreamGenerator() {
+        yield { candidates: [{ content: { parts: [{ text: '안녕' }] } }] };
+        yield { candidates: [{ content: { parts: [{ text: '하세요' }] } }] };
+      }
+      const mockClient = {
+        models: {
+          generateContentStream: vi.fn().mockResolvedValue(mockStreamGenerator()),
+        },
+      };
+      (provider as any).client = mockClient;
+
+      const ac = new AbortController();
+
+      // when
+      const chunks: Array<{ text?: string }> = [];
+      for await (const chunk of provider.stream(
+        [{ role: 'user', content: '안녕' }],
+        undefined,
+        ac.signal,
+      )) {
+        chunks.push(chunk);
+      }
+
+      // then
+      expect(mockClient.models.generateContentStream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({
+            abortSignal: ac.signal,
+          }),
+        }),
+      );
+      expect(chunks).toEqual([{ text: '안녕' }, { text: '하세요' }]);
+    });
+
+    it('스트림 내에 functionCall이 포함되어 있으면 toolCalls를 포함한 청크를 방출한다', async () => {
+      // given
+      const provider = new GeminiProvider(mockConfigService);
+      async function* mockStreamGenerator() {
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    functionCall: {
+                      name: 'search_my_documents',
+                      args: { query: 'NestJS' },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      }
+      const mockClient = {
+        models: {
+          generateContentStream: vi.fn().mockResolvedValue(mockStreamGenerator()),
+        },
+      };
+      (provider as any).client = mockClient;
+
+      // when
+      const chunks: any[] = [];
+      for await (const chunk of provider.stream(
+        [{ role: 'user', content: '문서 검색' }],
+        [
+          {
+            name: 'search_my_documents',
+            description: '검색',
+            parameters: { type: 'object', properties: {} },
+          },
+        ],
+      )) {
+        chunks.push(chunk);
+      }
+
+      // then
+      expect(chunks.length).toBe(1);
+      expect(chunks[0].toolCalls).toEqual([
+        {
+          id: 'search_my_documents',
+          name: 'search_my_documents',
+          args: { query: 'NestJS' },
+        },
+      ]);
+    });
+  });
 });

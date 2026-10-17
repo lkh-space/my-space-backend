@@ -71,6 +71,12 @@ last-updated: 2026-10-06
   * 일시적인 인덱싱 실패(MinIO/네트워크 지연 등) 시 최대 3회까지 지연 재시도 큐(`markdown-indexing-queue.retry`)를 통해 재시도한다.
   * 최대 재시도 초과 또는 역직렬화 불가 메시지는 즉시 Dead Letter Exchange(`markdown-indexing-queue.dlx`)를 통해 Dead Letter Queue(`markdown-indexing-queue.dlq`)로 안전하게 격리 보존되어 메시지 영구 소실을 방지한다.
   * 인덱싱 워커는 MinIO 원문 로드 실패 등의 예외를 내부에서 삼키지 않고 브로커로 전파하여 재시도/DLQ 메커니즘을 유발해야 한다.
+* **`BR-A08` (SSE 스트리밍 안정성, 백프레셔 및 단일 LLM 스트림 보장)**:
+  * **클라이언트 종료 감지 및 자원 회수**: 클라이언트가 브라우저 탭을 닫거나 연결을 종료(`req.on('close')`)하면 즉시 `AbortController`를 abort하여 LLM Provider의 추론과 소켓 버퍼 낭비를 원천 차단한다.
+  * **출력 백프레셔(Backpressure) 처리**: 느린 네트워크 클라이언트에 대해 `res.write()`가 `false`를 반환하면 Node.js `drain` 이벤트를 대기(`once(res, 'drain', { signal })`)하여 프로세스 메모리 버퍼의 무한 팽창(OOM)을 방지한다.
+  * **프록시 버퍼링 방지 및 Keep-Alive**: 리버스 프록시(Nginx 등)의 SSE 버퍼링을 방지하기 위해 `X-Accel-Buffering: no` 헤더를 설정하고, 60초 유휴 타임아웃 방지를 위해 15초 주기로 SSE 주석 핑(`: ping\n\n`) 하트비트를 유지한다.
+  * **단일 LLM 호출 보장**: 스트리밍 대화 시 `generate()`를 선행 호출하여 답변을 통째로 받아오는 비효율 및 이중 과금을 제거하고, `provider.stream(messages, tools, signal)`을 통해 직접 실시간 토큰을 방출하며 청크 내 도구 호출을 감지한다.
+  * **에러 마스킹**: 스트리밍 도중 예외가 발생하더라도 데이터베이스 정보나 스택트레이스 원문 메시지를 SSE로 노출하지 않으며, 표준화된 에러 코드(`code`)로 추상화하여 전송한다.
 
 ---
 

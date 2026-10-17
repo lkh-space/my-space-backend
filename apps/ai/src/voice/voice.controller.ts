@@ -9,11 +9,13 @@ import {
   UploadedFile,
   HttpStatus,
   HttpCode,
+  Req,
   Res,
   UsePipes,
   Logger,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import { once } from 'node:events';
+import type { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -122,8 +124,16 @@ export class VoiceController {
     @CurrentUser() user: AuthUser,
     @Body() rawBody: Record<string, unknown>,
     @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
+    const ac = new AbortController();
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        ac.abort();
+      }
+    });
+
     // 1. multipart/form-data 및 application/json 입력 정규화
     const sessionId = String(rawBody.sessionId || '');
     const textQuery = rawBody.textQuery ? String(rawBody.textQuery) : undefined;
@@ -154,15 +164,37 @@ export class VoiceController {
 
     // 2. SSE 응답 헤더 지연 초기화 (첫 이벤트 방출 시 헤더 전송)
     let headersSent = false;
+    let hb: NodeJS.Timeout | null = null;
+
     const sendHeaders = () => {
       if (!headersSent) {
         res.status(HttpStatus.OK);
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders?.();
         headersSent = true;
+
+        hb = setInterval(() => {
+          if (!res.writableEnded && !ac.signal.aborted) {
+            res.write(': ping\n\n');
+          }
+        }, 15_000);
       }
+    };
+
+    const writeSseChunk = async (chunkStr: string): Promise<boolean> => {
+      if (ac.signal.aborted || res.writableEnded) return false;
+      const canContinue = res.write(chunkStr);
+      if (!canContinue && !res.writableEnded && !ac.signal.aborted) {
+        try {
+          await once(res, 'drain', { signal: ac.signal });
+        } catch {
+          return false;
+        }
+      }
+      return true;
     };
 
     try {
@@ -179,8 +211,10 @@ export class VoiceController {
         dto,
         audioFile: audioFileParam,
       })) {
+        if (ac.signal.aborted) break;
         sendHeaders();
-        res.write(`event: ${chunk.event}\ndata: ${chunk.data}\n\n`);
+        const sent = await writeSseChunk(`event: ${chunk.event}\ndata: ${chunk.data}\n\n`);
+        if (!sent) break;
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -195,22 +229,32 @@ export class VoiceController {
 
         res.status(statusCode).json({
           statusCode,
-          message,
+          message:
+            err instanceof BaseDomainException
+              ? err.message
+              : '스트리밍 처리 중 서버 에러가 발생했습니다.',
           error: err instanceof Error ? err.name : 'Internal Server Error',
           timestamp: new Date().toISOString(),
         });
         return;
       }
 
-      // 이미 SSE 스트림 헤더가 전송된 경우, error와 done 이벤트를 전송하고 즉시 스트림 종료
-      res.write(
-        `event: error\ndata: ${JSON.stringify({ error: message })}\n\n`,
-      );
-      res.write(
-        `event: done\ndata: ${JSON.stringify({ finished: true, error: true })}\n\n`,
-      );
+      // 이미 SSE 스트림 헤더가 전송된 경우, 표준화된 에러 코드 전송
+      if (!ac.signal.aborted && !res.writableEnded) {
+        const errorCode =
+          err instanceof BaseDomainException ? err.code : 'VOICE_STREAM_ERROR';
+        await writeSseChunk(
+          `event: error\ndata: ${JSON.stringify({ code: errorCode })}\n\n`,
+        );
+        await writeSseChunk(
+          `event: done\ndata: ${JSON.stringify({ finished: true, error: true })}\n\n`,
+        );
+      }
     } finally {
-      if (headersSent) {
+      if (hb) {
+        clearInterval(hb);
+      }
+      if (headersSent && !res.writableEnded) {
         res.end();
       }
     }

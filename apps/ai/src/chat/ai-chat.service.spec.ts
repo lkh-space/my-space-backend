@@ -100,11 +100,13 @@ describe('AiChatService (BDD 단위 테스트)', () => {
   });
 
   describe('실시간 스트리밍 대화 (streamChat)', () => {
-    it('도구 호출이 없는 일반 응답 스트리밍 시 token과 done 이벤트를 방출한다', async () => {
+    it('도구 호출이 없는 일반 응답 스트리밍 시 generate를 호출하지 않고 stream 단 1회 호출로 token과 done 이벤트를 방출한다', async () => {
       // given
-      vi.spyOn(mockLlmProvider, 'generate').mockResolvedValue({
-        content: '안녕하세요! 좋은 하루입니다.',
-      });
+      async function* mockTextStream() {
+        yield { text: '안녕하세요! ' };
+        yield { text: '좋은 하루입니다.' };
+      }
+      vi.spyOn(mockLlmProvider, 'stream').mockImplementation(mockTextStream as any);
 
       const dto = {
         messages: [{ role: 'user' as const, content: '안녕' }],
@@ -117,34 +119,42 @@ describe('AiChatService (BDD 단위 테스트)', () => {
       }
 
       // then
-      expect(events.length).toBe(2);
+      expect(mockLlmProvider.generate).not.toHaveBeenCalled();
+      expect(mockLlmProvider.stream).toHaveBeenCalledTimes(1);
+      expect(events.length).toBe(3);
       expect(events[0].event).toBe('token');
-      expect(JSON.parse(events[0].data).delta).toBe('안녕하세요! 좋은 하루입니다.');
-      expect(events[1].event).toBe('done');
+      expect(JSON.parse(events[0].data).delta).toBe('안녕하세요! ');
+      expect(events[1].event).toBe('token');
+      expect(JSON.parse(events[1].data).delta).toBe('좋은 하루입니다.');
+      expect(events[2].event).toBe('done');
     });
 
-    it('도구 호출이 포함된 스트리밍 시 tool_start, tool_end, token, done 이벤트를 순차적으로 방출한다', async () => {
+    it('도구 호출이 포함된 스트리밍 시 스트림에서 도구를 감지하고 tool_start, tool_end, token, done 이벤트를 순차적으로 방출한다', async () => {
       // given
-      vi.spyOn(mockLlmProvider, 'generate').mockResolvedValue({
-        content: '',
-        toolCalls: [
-          {
-            id: 'call_2',
-            name: 'search_my_documents',
-            args: { query: 'Qdrant 가이드' },
-          },
-        ],
-      });
+      async function* mockToolStream() {
+        yield {
+          toolCalls: [
+            {
+              id: 'call_2',
+              name: 'search_my_documents',
+              args: { query: 'Qdrant 가이드' },
+            },
+          ],
+        };
+      }
+
+      async function* mockFinalStream() {
+        yield { text: 'Qdrant는 ' };
+        yield { text: '벡터 데이터베이스입니다.' };
+      }
+
+      vi.spyOn(mockLlmProvider, 'stream')
+        .mockImplementationOnce(mockToolStream as any)
+        .mockImplementationOnce(mockFinalStream as any);
 
       vi.spyOn(mockAiToolsService, 'executeTool').mockResolvedValue(
         'Qdrant 검색 결과 내용...',
       );
-
-      async function* mockStreamGenerator() {
-        yield 'Qdrant는 ';
-        yield '벡터 데이터베이스입니다.';
-      }
-      vi.spyOn(mockLlmProvider, 'stream').mockImplementation(mockStreamGenerator as any);
 
       const dto = {
         messages: [{ role: 'user' as const, content: 'Qdrant 정보 알려줘' }],
@@ -157,6 +167,9 @@ describe('AiChatService (BDD 단위 테스트)', () => {
       }
 
       // then
+      expect(mockLlmProvider.generate).not.toHaveBeenCalled();
+      expect(mockLlmProvider.stream).toHaveBeenCalledTimes(2);
+
       const eventNames = events.map((e) => e.event);
       expect(eventNames).toEqual([
         'tool_start',
@@ -169,6 +182,28 @@ describe('AiChatService (BDD 단위 테스트)', () => {
       expect(JSON.parse(events[1].data).status).toBe('success');
       expect(JSON.parse(events[2].data).delta).toBe('Qdrant는 ');
       expect(JSON.parse(events[3].data).delta).toBe('벡터 데이터베이스입니다.');
+    });
+
+    it('AbortSignal이 이미 취소되었거나 도중 취소되면 즉시 스트리밍을 종료한다', async () => {
+      // given
+      async function* emptyStream() {}
+      vi.spyOn(mockLlmProvider, 'stream').mockImplementation(emptyStream as any);
+
+      const ac = new AbortController();
+      ac.abort();
+
+      const dto = {
+        messages: [{ role: 'user' as const, content: '안녕' }],
+      };
+
+      // when
+      const events: Array<{ event: string; data: string }> = [];
+      for await (const chunk of service.streamChat('user-1', dto, ac.signal)) {
+        events.push(chunk);
+      }
+
+      // then
+      expect(events.length).toBe(0);
     });
   });
 });
