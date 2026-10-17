@@ -1,13 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { z } from 'zod';
 
-export const searchQuerySchema = z.object({
-  q: z.string().trim().default(''),
-  folderId: z.string().uuid().optional(),
-  tag: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-});
+export const searchQuerySchema = z
+  .object({
+    q: z.string().trim().default(''),
+    folderId: z.string().uuid().optional(),
+    tag: z.string().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .refine((data) => data.page * data.limit <= 10000, {
+    message: '검색 결과 페이징은 최대 10,000건까지 가능합니다. (page * limit <= 10,000)',
+    path: ['page'],
+  });
 
 export class SearchQueryDto {
   static readonly schema = searchQuerySchema;

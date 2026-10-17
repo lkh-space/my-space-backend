@@ -116,28 +116,42 @@ export class OpenSearchService implements OnModuleInit {
   /**
    * 문서 색인 (생성 또는 갱신)
    */
-  async indexDocument(doc: IndexedDocument): Promise<void> {
+  async indexDocument(
+    doc: IndexedDocument,
+    options?: { refresh?: boolean | 'wait_for' },
+  ): Promise<void> {
+    const normalizedTags = (doc.tags || [])
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+
     try {
       await this.client.index({
         index: this.indexName,
         id: doc.id,
-        body: doc,
-        refresh: true,
+        body: {
+          ...doc,
+          tags: normalizedTags,
+        },
+        refresh: options?.refresh ?? 'wait_for',
       });
     } catch (error) {
       this.logger.error(`문서(${doc.id}) OpenSearch 색인 실패: ${(error as Error).message}`);
+      throw error;
     }
   }
 
   /**
    * 문서 색인 삭제
    */
-  async deleteDocument(id: string): Promise<void> {
+  async deleteDocument(
+    id: string,
+    options?: { refresh?: boolean | 'wait_for' },
+  ): Promise<void> {
     try {
       await this.client.delete({
         index: this.indexName,
         id,
-        refresh: true,
+        refresh: options?.refresh ?? 'wait_for',
       });
     } catch (error) {
       this.logger.warn(`문서(${id}) OpenSearch 색인 삭제 중 알림: ${(error as Error).message}`);
@@ -158,8 +172,8 @@ export class OpenSearchService implements OnModuleInit {
         filterClauses.push({ term: { folderId: options.folderId } });
       }
 
-      if (options.tag) {
-        filterClauses.push({ term: { tags: options.tag } });
+      if (options.tag && options.tag.trim().length > 0) {
+        filterClauses.push({ term: { tags: options.tag.trim().toLowerCase() } });
       }
 
       if (options.query && options.query.trim().length > 0) {
@@ -186,6 +200,7 @@ export class OpenSearchService implements OnModuleInit {
             },
           },
           highlight: {
+            encoder: 'html',
             fields: {
               body: {
                 fragment_size: 100,
@@ -224,7 +239,7 @@ export class OpenSearchService implements OnModuleInit {
       return { total, hits };
     } catch (error) {
       this.logger.error(`OpenSearch 검색 실패: ${(error as Error).message}`);
-      return { total: 0, hits: [] };
+      throw error;
     }
   }
 }

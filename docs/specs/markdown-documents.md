@@ -79,6 +79,10 @@ last-updated: 2026-10-16
 * **`BR-M09` (복합 정렬 인덱스 및 커서 기반 페이지네이션)**:
   - 대량 문서 목록 조회 시 Filesort 병목을 방지하기 위해 `(owner_id, updated_at DESC)`, `(owner_id, folder_id, updated_at DESC)` 복합 정렬 인덱스와 `document_tags` 역조회를 위한 `(tag_id)` 인덱스를 유지한다.
   - 대용량 데이터 환경에서의 깊은 오프셋 성능 저하를 방지하기 위해 커서 기반 페이징(`cursor`, `nextCursor`)을 지원하며, 동일 정렬 시 순서가 보장되도록 `[{ updatedAt: 'desc' }, { id: 'desc' }]`의 결정론적(deterministic) 정렬을 보장한다.
+* **`BR-M10` (OpenSearch 검색 장애 전파, 하이라이트 XSS 방어 및 페이징 제한)**:
+  - 검색 클러스터 장애 발생 시 빈 결과를 반환하여 장애를 은폐하지 않고 `SEARCH_SERVICE_UNAVAILABLE` (503 Service Unavailable) 예외를 클라이언트에 명확히 전파한다.
+  - 하이라이트 스니펫 생성 시 `encoder: 'html'`을 필수로 적용하여 본문 내 악성 스크립트 특수문자가 HTML 엔티티로 인코딩되도록 하여 XSS 공격을 원천 방어한다.
+  - OpenSearch 윈도우 한계 보호를 위해 검색 쿼리는 `page * limit <= 10,000`으로 제한하며, 색인 및 검색 필터 시 태그는 소문자(`toLowerCase()`)로 정규화한다.
 
 ---
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OpenSearchService } from '@app/storage/opensearch/opensearch.service.js';
+import { SearchUnavailableException } from '../exceptions/markdown.exception.js';
 import {
   SearchQueryDto,
   SearchResponseDto,
@@ -21,14 +22,21 @@ export class SearchService {
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const { total, hits } = await this.openSearchService.search({
-      query: query.q || '',
-      ownerId,
-      folderId: query.folderId,
-      tag: query.tag,
-      offset,
-      limit,
-    });
+    let searchResult: { total: number; hits: any[] };
+    try {
+      searchResult = await this.openSearchService.search({
+        query: query.q || '',
+        ownerId,
+        folderId: query.folderId,
+        tag: query.tag,
+        offset,
+        limit,
+      });
+    } catch (error) {
+      throw new SearchUnavailableException((error as Error).message);
+    }
+
+    const { total, hits } = searchResult;
 
     const items = hits.map(
       (hit: any) =>

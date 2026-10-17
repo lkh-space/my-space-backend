@@ -83,3 +83,20 @@ export class DocumentVersionConflictException extends BaseDomainException {
   }
 }
 
+/**
+ * OpenSearch 등 검색 엔진 서비스 장애 예외
+ */
+export class SearchUnavailableException extends BaseDomainException {
+  readonly code = 'SEARCH_SERVICE_UNAVAILABLE';
+
+  constructor(detail?: string) {
+    super(
+      detail
+        ? `검색 엔진 서비스를 일시적으로 사용할 수 없습니다: ${detail}`
+        : '검색 엔진 서비스를 일시적으로 사용할 수 없습니다.',
+      { detail },
+    );
+  }
+}
+
+
