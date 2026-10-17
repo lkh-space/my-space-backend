@@ -1,3 +1,4 @@
+// oxlint-disable-next-line no-restricted-imports
 import matter from 'gray-matter';
 import { UnsafeFrontmatterException } from './unsafe-frontmatter.exception.js';
 

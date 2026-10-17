@@ -2,7 +2,18 @@
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/crates/oxc_linter/src/rules.rs",
   "rules": {
     "@typescript-eslint/no-explicit-any": "off",
-    "@typescript-eslint/no-floating-promises": "warn"
+    "@typescript-eslint/no-floating-promises": "warn",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "gray-matter",
+            "message": "gray-matter 직접 import는 금지됩니다. @app/common/markdown/safe-matter.js의 safeMatter를 사용하세요."
+          }
+        ]
+      }
+    ]
   },
   "env": {
     "node": true

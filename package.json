@@ -19,7 +19,7 @@
     "start:ai:debug": "IS_LOCAL=true PORT=3001 nest start ai --debug --watch",
     "start:ai:prod": "PORT=3001 node dist/apps/ai/main.js",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\" \"test/**/*.ts\"",
-    "lint": "oxlint apps/ libs/ test/",
+    "lint": "oxlint -c oxlint.json apps/ libs/ test/",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",

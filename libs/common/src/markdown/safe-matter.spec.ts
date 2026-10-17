@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+// oxlint-disable-next-line no-restricted-imports
 import matter from 'gray-matter';
 import { safeMatter } from './safe-matter.js';
 import { UnsafeFrontmatterException } from './unsafe-frontmatter.exception.js';
