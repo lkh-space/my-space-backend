@@ -124,8 +124,9 @@ describe('AssetController (에셋 보안 헤더 및 스트리밍 단위 테스�
       // given
       const brokenStream = new Readable({
         read() {
-          const err = new Error('Premature close');
-          (err as { code: string }).code = 'ERR_STREAM_PREMATURE_CLOSE';
+          const err = Object.assign(new Error('Premature close'), {
+            code: 'ERR_STREAM_PREMATURE_CLOSE',
+          });
           this.destroy(err);
         },
       });

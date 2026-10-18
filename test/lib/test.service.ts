@@ -3,7 +3,7 @@ import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 
 @Injectable()
 export class TestService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(public readonly prisma: PrismaService) {}
 
   public async cleanDatabase(): Promise<void> {
     try {

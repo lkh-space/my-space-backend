@@ -11,7 +11,7 @@ describe('VoiceController (BDD 단위 테스트)', () => {
   const mockUser: AuthUser = {
     username: 'dev-admin',
     email: 'admin@local.test',
-    name: 'Dev Admin',
+    displayName: 'Dev Admin',
     groups: ['admin'],
   };
 

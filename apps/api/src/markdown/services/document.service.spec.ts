@@ -84,7 +84,7 @@ describe('DocumentService', () => {
         tags: ['nestjs'],
       };
 
-      vi.mocked(prisma.document.create).mockImplementation(async (args: any) => ({
+      vi.mocked(prisma.document.create).mockImplementation((async (args: any) => ({
         id: args.data.id,
         title: args.data.title,
         folderId: null,
@@ -94,7 +94,7 @@ describe('DocumentService', () => {
         createdAt: new Date('2026-10-05T10:00:00Z'),
         updatedAt: new Date('2026-10-05T10:00:00Z'),
         folder: null,
-      } as never));
+      })) as any);
 
       // when
       const result = await service.createDocument(ownerId, dto);
@@ -411,7 +411,7 @@ describe('DocumentService', () => {
         stream: null as never,
       };
 
-      vi.mocked(prisma.document.create).mockImplementation(async (args: any) => ({
+      vi.mocked(prisma.document.create).mockImplementation((async (args: any) => ({
         id: 'doc-imported',
         title: args.data.title,
         folderId: null,
@@ -421,7 +421,7 @@ describe('DocumentService', () => {
         createdAt: new Date('2026-10-05T10:00:00Z'),
         updatedAt: new Date('2026-10-05T10:00:00Z'),
         folder: null,
-      } as never));
+      })) as any);
 
       // when
       const result = await service.importMarkdown(ownerId, file);
@@ -466,10 +466,10 @@ describe('DocumentService', () => {
         revisions: [{ objectKey: 'docs/admin/doc-1/revisions/v1.md' }],
       } as never);
 
-      vi.mocked(prisma.document.delete).mockImplementation(async () => {
+      vi.mocked(prisma.document.delete).mockImplementation((async () => {
         callOrder.push('DB_DELETE');
         return {} as never;
-      });
+      }) as any);
 
       vi.mocked(minioService.deleteObjects).mockImplementation(async () => {
         callOrder.push('MINIO_DELETE');

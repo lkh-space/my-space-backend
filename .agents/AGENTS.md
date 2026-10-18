@@ -189,9 +189,13 @@ AI 에이전트는 본 프로젝트의 코드를 작성하거나 리팩토링할
 3. **Git 커밋 직접 실행 금지 (Git Command Restriction)**:
    - 에이전트는 어떠한 경우에도 직접 `git add`, `git commit`, `git push` 등 버전을 관리하거나 커밋을 생성하는 명령을 터미널 도구로 실행해서는 안 됩니다.
    - 형상 관리는 오직 사용자가 수동으로 수행하며, 에이전트는 요청 시 커밋 메시지 추천만 제공합니다.
-4. **불필요한 빌드 검증 생략 (No Redundant Validation)**:
-   - 단순 문서(README.md, ADR, Spec 등 마크다운 파일) 작성이나 정적 리소스 추가와 같이 소스 코드 런타임에 부수 효과가 없는 작업은 `pnpm run build` 등의 기계적인 검증을 생략합니다.
-   - 소스 코드가 변경된 경우에만 `pnpm run build` 및 `pnpm run test`를 실행합니다.
+4. **코드 변경 시 필수 품질 검증 단계 (Validation Pipeline)**:
+   - 단순 문서(README.md, ADR, Spec 등 마크다운 파일) 작성이나 정적 리소스 추가와 같이 소스 코드 런타임에 부수 효과가 없는 작업은 기계적인 검증을 생략합니다.
+   - 소스 코드가 변경된 경우 에이전트는 작업을 완료하기 전 다음 4단계 검증 명령을 반드시 순차적으로 실행하여 무결성을 확인해야 합니다:
+     1. `pnpm run lint` (초고속 정적 분석)
+     2. `pnpm run typecheck` (`tsc --noEmit`을 통한 컴파일 에러 없는 순수 타입 정합성 검사)
+     3. `pnpm run build` (NestJS Rspack 번들링 빌드 검증)
+     4. `pnpm run test` (Vitest 단위 테스트 검증, 필요한 경우 `pnpm run test:e2e` 실행)
 5. **ESM 모듈 임포트 규칙 (필수)**:
    - 본 프로젝트는 Node.js Native ESM(`"type": "module"`) 환경입니다.
    - 프로젝트 내부의 로컬 파일/모듈을 임포트할 때는 **반드시 `.js` 확장자를 명시**해야 합니다. (예: `import { ... } from './common/logger/logger.config.js'`)

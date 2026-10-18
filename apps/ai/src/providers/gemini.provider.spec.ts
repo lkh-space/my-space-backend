@@ -144,7 +144,7 @@ describe('GeminiProvider (BDD 단위 테스트)', () => {
         {
           name: 'search_my_documents',
           description: '문서 검색',
-          parameters: { type: 'OBJECT', properties: {} },
+          parameters: { type: 'object', properties: {} },
         },
       ],
     );

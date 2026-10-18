@@ -86,7 +86,9 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
           id: 'point-1',
           score: 0.88,
           payload: {
+            ownerId: 'user-1',
             documentId: 'doc-1',
+            chunkIndex: 0,
             title: '테스트 문서',
             heading: '# 서론',
             content: '테스트 본문입니다.',

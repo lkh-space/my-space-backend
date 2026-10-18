@@ -1,33 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Readable } from 'node:stream';
+import type { MinioService } from '@app/storage/minio/minio.service.js';
+import type {
+  IndexedDocument,
+  OpenSearchService,
+  SearchHitResult,
+  SearchOptions,
+} from '@app/storage/opensearch/opensearch.service.js';
 import type {
   QdrantPointPayload,
   QdrantSearchResult,
   QdrantService,
 } from '@app/storage/qdrant/qdrant.service.js';
-import type {
-  OpenSearchService,
-  IndexedDocument,
-  SearchOptions,
-  SearchHitResult,
-} from '@app/storage/opensearch/opensearch.service.js';
-import type { MinioService } from '@app/storage/minio/minio.service.js';
 import type { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Readable } from 'node:stream';
 
 @Injectable()
-export class FakeMinioService
-  implements
-    Pick<
-      MinioService,
-      | 'docsBucket'
-      | 'assetsBucket'
-      | 'putObject'
-      | 'getObjectAsString'
-      | 'getObjectStream'
-      | 'deleteObject'
-      | 'deleteObjects'
-    >
-{
+export class FakeMinioService implements Pick<
+  MinioService,
+  | 'docsBucket'
+  | 'assetsBucket'
+  | 'putObject'
+  | 'getObjectAsString'
+  | 'getObjectStream'
+  | 'deleteObject'
+  | 'deleteObjects'
+> {
   private readonly storage = new Map<
     string,
     { body: Buffer; contentType: string }
@@ -56,7 +53,9 @@ export class FakeMinioService
   async getObjectAsString(bucket: string, key: string): Promise<string> {
     const item = this.storage.get(`${bucket}:${key}`);
     if (!item) {
-      throw new NotFoundException(`스토리지에서 파일을 찾을 수 없습니다: ${key}`);
+      throw new NotFoundException(
+        `스토리지에서 파일을 찾을 수 없습니다: ${key}`,
+      );
     }
     return item.body.toString('utf-8');
   }
@@ -64,10 +63,16 @@ export class FakeMinioService
   async getObjectStream(
     bucket: string,
     key: string,
-  ): Promise<{ stream: Readable; contentType?: string; contentLength?: number }> {
+  ): Promise<{
+    stream: Readable;
+    contentType?: string;
+    contentLength?: number;
+  }> {
     const item = this.storage.get(`${bucket}:${key}`);
     if (!item) {
-      throw new NotFoundException(`스토리지에서 파일을 찾을 수 없습니다: ${key}`);
+      throw new NotFoundException(
+        `스토리지에서 파일을 찾을 수 없습니다: ${key}`,
+      );
     }
     const stream = Readable.from(item.body);
     return {
@@ -93,13 +98,10 @@ export class FakeMinioService
 }
 
 @Injectable()
-export class FakeOpenSearchService
-  implements
-    Pick<
-      OpenSearchService,
-      'indexDocument' | 'deleteDocument' | 'search' | 'ensureIndex'
-    >
-{
+export class FakeOpenSearchService implements Pick<
+  OpenSearchService,
+  'indexDocument' | 'deleteDocument' | 'search' | 'ensureIndex'
+> {
   private readonly docs = new Map<string, IndexedDocument>();
 
   async ensureIndex(): Promise<void> {}
@@ -173,9 +175,10 @@ export class FakeOpenSearchService
 }
 
 @Injectable()
-export class FakeRabbitmqService
-  implements Pick<RabbitmqService, 'indexingQueue' | 'publish' | 'consume'>
-{
+export class FakeRabbitmqService implements Pick<
+  RabbitmqService,
+  'indexingQueue' | 'publish' | 'consume'
+> {
   readonly indexingQueue = 'markdown-indexing-queue';
 
   async publish(
@@ -190,19 +193,17 @@ export class FakeRabbitmqService
 }
 
 @Injectable()
-export class FakeQdrantService
-  implements
-    Pick<
-      QdrantService,
-      | 'collectionName'
-      | 'vectorDimension'
-      | 'ensureCollection'
-      | 'upsertPoints'
-      | 'deletePointsByFilter'
-      | 'searchSimilar'
-      | 'countPoints'
-    >
-{
+export class FakeQdrantService implements Pick<
+  QdrantService,
+  | 'collectionName'
+  | 'vectorDimension'
+  | 'ensureCollection'
+  | 'upsertPoints'
+  | 'deletePointsByDocument'
+  | 'deleteOldVersionsByDocument'
+  | 'getLatestVersionForDocument'
+  | 'searchPoints'
+> {
   readonly collectionName = 'test-personal-documents';
   readonly vectorDimension = 768;
 
@@ -233,9 +234,13 @@ export class FakeQdrantService
     }
   }
 
-  async deletePointsByDocument(ownerId: string, documentId: string): Promise<void> {
+  async deletePointsByDocument(
+    ownerId: string,
+    documentId: string,
+  ): Promise<void> {
     this.points = this.points.filter(
-      (p) => !(p.payload.ownerId === ownerId && p.payload.documentId === documentId),
+      (p) =>
+        !(p.payload.ownerId === ownerId && p.payload.documentId === documentId),
     );
   }
 
@@ -259,7 +264,8 @@ export class FakeQdrantService
     documentId: string,
   ): Promise<number | null> {
     const matched = this.points.filter(
-      (p) => p.payload.ownerId === ownerId && p.payload.documentId === documentId,
+      (p) =>
+        p.payload.ownerId === ownerId && p.payload.documentId === documentId,
     );
     if (matched.length === 0) return null;
     return Math.max(...matched.map((p) => Number(p.payload.version ?? 0)));
@@ -285,8 +291,13 @@ export class FakeQdrantService
       );
     }
 
-    if (filterOptions?.folderId !== undefined && filterOptions.folderId !== null) {
-      matched = matched.filter((p) => p.payload.folderId === filterOptions.folderId);
+    if (
+      filterOptions?.folderId !== undefined &&
+      filterOptions.folderId !== null
+    ) {
+      matched = matched.filter(
+        (p) => p.payload.folderId === filterOptions.folderId,
+      );
     }
 
     if (filterOptions?.tags && filterOptions.tags.length > 0) {
@@ -302,7 +313,11 @@ export class FakeQdrantService
     }));
   }
 
-  getAllPoints(): Array<{ id: string; vector: number[]; payload: QdrantPointPayload }> {
+  getAllPoints(): Array<{
+    id: string;
+    vector: number[];
+    payload: QdrantPointPayload;
+  }> {
     return [...this.points];
   }
 
@@ -310,4 +325,3 @@ export class FakeQdrantService
     this.points = [];
   }
 }
-
