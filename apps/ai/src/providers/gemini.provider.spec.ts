@@ -10,7 +10,7 @@ describe('GeminiProvider (BDD 단위 테스트)', () => {
       get: vi.fn((key: string, defaultValue?: any) => {
         if (key === 'ai.gemini.apiKey') return 'mock-gemini-key';
         if (key === 'ai.gemini.model') return 'gemini-3.8-flash';
-        if (key === 'ai.gemini.embeddingModel') return 'text-embedding-004';
+        if (key === 'ai.gemini.embeddingModel') return 'gemini-embedding-001';
         return defaultValue;
       }),
     } as unknown as ConfigService;

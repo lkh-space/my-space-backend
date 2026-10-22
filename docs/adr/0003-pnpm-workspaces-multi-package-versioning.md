@@ -35,7 +35,7 @@ decision-makers: [Keunhyeok Lim]
 이유:
 이미 패키지 매니저로 `pnpm`을 사용 중이므로 `pnpm-workspace.yaml`을 활성화하여 `apps/*`와 `libs/*`를 워크스페이스 패키지로 등록하는 것이 가장 정석적이며 확장성 높은 모노레포 표준이기 때문입니다.
 
-* **패키지 네이밍**: `@my-space/api`, `@my-space/ai`, `@my-space/common`, `@my-space/storage`, `@my-space/config`
+* **패키지 네이밍**: `@my-space/api`, `@my-space/ai`, `@my-space/common`, `@my-space/storage`, `@my-space/config`, `@my-space/markdown-core`
 * **초기 버전**: `api`와 `ai` 모두 `0.1.0`으로 정렬하여 신규 세맨틱 버저닝 시작
 * **버전 모듈 공통화**: 기존 `apps/api`에만 존재하던 `VersionModule`을 `@app/common` 라이브러리로 승격하여, `api`와 `ai` 두 앱 모두에서 동일한 규격의 `GET /version` 엔드포인트를 노출
 
@@ -61,8 +61,10 @@ my-space-backend/
     │   └── src/version/         # 공통 VersionModule, Service, Controller
     ├── storage/
     │   └── package.json         # @my-space/storage (private: true)
-    └── config/
-        └── package.json         # @my-space/config (private: true)
+    ├── config/
+    │   └── package.json         # @my-space/config (private: true)
+    └── markdown-core/
+        └── package.json         # @my-space/markdown-core (private: true)
 ```
 
 ---

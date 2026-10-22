@@ -19,7 +19,7 @@ last-updated: 2026-10-06
 * **비동기 인덱싱 파이프라인**: RabbitMQ 메시지 큐(`markdown-indexing-queue`)를 구독하여 문서 변경 시 백그라운드에서 Qdrant 768차원 컬렉션(`personal-documents`) 동기화
 * **의미론적 청킹**: 헤딩, 코드 블록, 표, 수식이 깨지지 않도록 마크다운 구조 보존 분할 (500~800자)
 * **멀티 AI Provider**:
-  * 운영: Google Gemini (`gemini-3.8-flash` / `text-embedding-004`, 768차원)
+  * 운영: Google Gemini (`gemini-3.8-flash` / `gemini-embedding-001`, 768차원)
   * 테스트/로컬: Ollama (`qwen3.5:0.8b` / `nomic-embed-text`, 768차원)
 * **Tool Calling 3종**:
   * `search_my_documents`: Qdrant 시맨틱 검색
@@ -84,9 +84,9 @@ last-updated: 2026-10-06
   * **도구 인자 Zod 검증 및 상한 강제**: AI가 호출하는 도구의 인자(`query`, `limit`, `documentId`, `title`, `content` 등)는 사전에 정의된 Zod 스키마로 엄격히 검증하며, 특히 `search_my_documents`의 `limit`은 1~10으로 강제 제한하여 과도한 벡터 조회를 차단한다.
   * **문서 원문 절단 및 XML 속성 이스케이프**: `read_document` 도구 호출 시 문서 본문은 최대 10,000자로 절단(truncate)하여 컨텍스트 윈도우 폭증을 방지하고, 문서 제목 및 ID는 특수문자/태그 탈출 문자(`"`, `<`, `>`, `&`, `'`)를 XML Entity로 안전하게 이스케이프하여 컨텍스트 경계 태그 탈출을 원천 방지한다.
 * **`BR-A10` (임베딩 모델 공간 격리 및 설정 기본값 단일 소스화)**:
-  * **설정 기본값 단일 소스화(SSOT)**: Gemini 및 Ollama의 모델 기본값(`GEMINI_MODEL=gemini-3.8-flash`, `GEMINI_EMBEDDING_MODEL=text-embedding-004` 등)은 `libs/config` 한 곳에서만 일관되게 정의하며, 프로바이더와 환경변수 검증 스키마 간 불일치를 원천 차단한다.
+  * **설정 기본값 단일 소스화(SSOT)**: Gemini 및 Ollama의 모델 기본값(`GEMINI_MODEL=gemini-3.8-flash`, `GEMINI_EMBEDDING_MODEL=gemini-embedding-001` 등)은 `libs/config` 한 곳에서만 일관되게 정의하며, 프로바이더와 환경변수 검증 스키마 간 불일치를 원천 차단한다.
   * **페이로드 모델 식별자 저장**: 문서 인덱싱(`INDEX`) 시 생성된 포인트 페이로드에 임베딩을 수행한 모델 식별자(`embeddingModel`)를 필수 저장하고, 키워드 인덱스를 생성하여 조회 성능을 보장한다.
-  * **검색 벡터 공간 격리 필터**: 시맨틱 검색(`POST /api/v1/ai/search` 및 `search_my_documents`) 시 질의어를 임베딩한 모델(`embeddingModel`)을 Qdrant 검색 필터(`must`)에 강제 포함하여, 서로 다른 임베딩 모델(예: text-embedding-004 vs nomic-embed-text)의 벡터가 동일 컬렉션 내에 공존하더라도 상이한 벡터 공간이 혼재되어 검색 품질이 붕괴하는 현상을 원천 방지한다.
+  * **검색 벡터 공간 격리 필터**: 시맨틱 검색(`POST /api/v1/ai/search` 및 `search_my_documents`) 시 질의어를 임베딩한 모델(`embeddingModel`)을 Qdrant 검색 필터(`must`)에 강제 포함하여, 서로 다른 임베딩 모델(예: gemini-embedding-001 vs nomic-embed-text)의 벡터가 동일 컬렉션 내에 공존하더라도 상이한 벡터 공간이 혼재되어 검색 품질이 붕괴하는 현상을 원천 방지한다.
   * **컬렉션 차원 및 거리 함수 런타임 검증**: Qdrant 초기화(`ensureCollection`) 시 기존 컬렉션의 벡터 차원(`size=768`) 및 거리 함수(`distance=Cosine`)를 검증하여 불일치 시 명확한 에러 로그를 남기고 비정상 색인을 방지한다.
 * **`BR-A11` (분산 추적 헤더 전파 및 요청 ID 위조 방지)**:
   * **요청 ID 정제 및 로그 주입 차단**: 클라이언트가 전송한 `x-request-id` 헤더는 `/^[\w-]{1,64}$/` 정규식으로 엄격히 검증하며, 개행 문자(`\r\n`), 공백, 특수문자 또는 64자 초과 값이 감지될 경우 새 UUID v4로 대체하여 로그 위조(Log Forgery/Log Injection)를 원천 차단한다.
@@ -153,24 +153,30 @@ last-updated: 2026-10-06
 * **Headers**: `Accept: text/event-stream`
 * **Response (200 OK, SSE Stream)**:
   ```text
-  event: token
-  data: {"delta": "작성하신 "}
+  event: tool_start
+  data: {"name":"search_my_documents","args":{"query":"아키텍처"}}
+
+  event: tool_end
+  data: {"name":"search_my_documents","status":"success"}
 
   event: token
-  data: {"delta": "문서에 따르면..."}
+  data: {"delta":"작성하신 "}
+
+  event: token
+  data: {"delta":"문서에 따르면..."}
 
   event: done
-  data: {"finished": true}
+  data: {"finished":true}
   ```
 
 ---
 
-## 6. 에러 코드 매핑
+## 6. 에러 코드 매핑 (`DOMAIN_ERROR_HTTP_MAP`)
 
-| HTTP Status | 에러 코드 (`code`) | 원인 및 설명 |
+| HTTP Status | 에러 코드 (`code`) | 발생 예외 / 원인 및 설명 |
 | :--- | :--- | :--- |
-| `400 Bad Request` | `AI_INVALID_QUERY` | 검색 쿼리나 메시지가 비어있음 |
-| `400 Bad Request` | `AI_PROVIDER_UNSUPPORTED` | 지원하지 않는 AI Provider 요청 |
-| `404 Not Found` | `AI_DOCUMENT_NOT_FOUND` | 도구 실행 시 지정한 문서를 찾을 수 없음 |
-| `502 Bad Gateway` | `AI_PROVIDER_ERROR` | Gemini 또는 Ollama API 호출 실패 |
-| `503 Service Unavailable` | `QDRANT_UNAVAILABLE` | Qdrant 벡터 데이터베이스 연결 불가 |
+| `400 Bad Request` | `INVALID_INPUT` | `ZodValidationPipe` — 검색 쿼리, 메시지 배열, role 등 입력 스키마 검증 실패 |
+| `404 Not Found` | `DOCUMENT_NOT_FOUND` | `DocumentNotFoundException` — `read_document` 도구 실행 시 문서를 찾을 수 없거나 타인 문서 접근 시도 |
+| `404 Not Found` | `FOLDER_NOT_FOUND` | `FolderNotFoundException` — `save_to_markdown` 도구 실행 시 대상 폴더가 존재하지 않음 |
+| `404 Not Found` | `AI_TOOL_NOT_FOUND` | `ToolNotFoundException` — 지원하지 않는 AI 도구 함수 호출 시도 |
+| `400 Bad Request` | `MARKDOWN_UNSAFE_FRONTMATTER` | `UnsafeFrontmatterException` — 비정상/위험한 마크다운 Frontmatter 감지 |

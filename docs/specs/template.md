@@ -58,7 +58,7 @@ export interface ExampleResponseDto {
 ## 6. 예외 처리 및 에러 스펙 (Error Handling)
 
 > [!IMPORTANT]
-> 새로 정의한 도메인 에러 코드가 특정 HTTP 상태 코드(404, 409, 401, 403, 500 등)로 매핑되어야 하는 경우, 구현 시 반드시 [`src/common/filters/domain-error-http.map.ts`](../../src/common/filters/domain-error-http.map.ts)의 `DOMAIN_ERROR_HTTP_MAP`에 등록해야 합니다. (미등록 시 `422 Unprocessable Entity`로 기본 처리)
+> 새로 정의한 도메인 에러 코드가 특정 HTTP 상태 코드(404, 409, 401, 403, 500 등)로 매핑되어야 하는 경우, 구현 시 반드시 [`libs/common/src/filters/domain-error-http.map.ts`](../../libs/common/src/filters/domain-error-http.map.ts)의 `DOMAIN_ERROR_HTTP_MAP`에 등록해야 합니다. (미등록 시 `422 Unprocessable Entity`로 기본 처리)
 
 | 에러 상황 | 발생 예외 클래스 | 에러 코드 (`code`) | HTTP Status | DOMAIN_ERROR_HTTP_MAP 등록 필요 여부 |
 | :--- | :--- | :--- | :--- | :--- |

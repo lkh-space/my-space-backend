@@ -1,11 +1,11 @@
 import fs from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { OpenSearchService } from '@app/storage/opensearch/opensearch.service.js';
 import { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
+import { MarkdownWriterService } from '@app/markdown-core';
 import { TagService } from './tag.service.js';
 import {
   CreateDocumentDto,
@@ -31,104 +31,33 @@ export class DocumentService {
     private readonly openSearchService: OpenSearchService,
     private readonly rabbitmqService: RabbitmqService,
     private readonly tagService: TagService,
+    private readonly markdownWriterService: MarkdownWriterService,
   ) {}
 
   /**
-   * 신규 문서 생성 (원자적 다단계 쓰기 보장)
+   * 신규 문서 생성 (원자적 다단계 쓰기 보장 - @app/markdown-core 위임)
    */
   async createDocument(
     ownerId: string,
     dto: CreateDocumentDto,
   ): Promise<DocumentDetailDto> {
-    const folderId = dto.folderId || null;
-
-    if (folderId) {
-      const folder = await this.prisma.folder.findFirst({
-        where: { id: folderId, ownerId },
-      });
-      if (!folder) {
-        throw new FolderNotFoundException(folderId);
-      }
-    }
-
-    // Frontmatter와 본문 결합
-    const frontmatter = dto.frontmatter || {};
     const content = dto.content || '';
-    const rawMarkdown = safeMatter.stringify(content, frontmatter);
-
-    // 식별자 및 오브젝트 키 사전 계산
-    const id = randomUUID();
-    const objectKey = `docs/${ownerId}/${id}/current.md`;
-    const tagNames = dto.tags || [];
-
-    // 1. MinIO에 먼저 저장 (MinIO 실패 시 DB에는 아무런 레코드도 남지 않음)
-    await this.minioService.putObject(
-      this.minioService.docsBucket,
-      objectKey,
-      rawMarkdown,
-    );
-
-    let created: any;
-    try {
-      // 2. DB 레코드와 태그 관계를 단일 트랜잭션으로 원자적 생성
-      created = await this.prisma.$transaction(async (tx) => {
-        const tagIds = await this.tagService.resolveTags(ownerId, tagNames, tx);
-        return tx.document.create({
-          data: {
-            id,
-            title: dto.title,
-            folderId,
-            ownerId,
-            currentVersion: 1,
-            objectKey,
-            tags: {
-              create: tagIds.map((tagId) => ({ tagId })),
-            },
-          },
-          include: {
-            folder: { select: { name: true } },
-          },
-        });
-      });
-    } catch (err) {
-      // DB 트랜잭션 실패 시 MinIO 선행 저장 객체 즉시 보상 삭제
-      await this.minioService
-        .deleteObject(this.minioService.docsBucket, objectKey)
-        .catch(() => {});
-      throw err;
-    }
-
-    // OpenSearch 비동기 색인
-    await this.openSearchService.indexDocument({
-      id: created.id,
-      title: created.title,
-      body: content,
-      tags: tagNames,
-      folderId: created.folderId,
-      ownerId,
-      updatedAt: created.updatedAt.toISOString(),
-    });
-
-    // RabbitMQ 비동기 벡터 인덱싱 이벤트 발행
-    await this.rabbitmqService.publish(this.rabbitmqService.indexingQueue, {
-      type: 'INDEX',
-      documentId: created.id,
-      ownerId,
-      version: 1,
-      objectKey,
-      title: created.title,
-      folderId: created.folderId,
-      tags: tagNames,
-      timestamp: new Date().toISOString(),
+    const frontmatter = dto.frontmatter || {};
+    const created = await this.markdownWriterService.createDocument(ownerId, {
+      title: dto.title,
+      content,
+      folderId: dto.folderId,
+      tags: dto.tags,
+      frontmatter,
     });
 
     return new DocumentDetailDto({
       id: created.id,
       title: created.title,
       folderId: created.folderId,
-      folderName: created.folder?.name || null,
-      tags: tagNames,
-      currentVersion: 1,
+      folderName: created.folderName || null,
+      tags: created.tags,
+      currentVersion: created.currentVersion,
       createdAt: created.createdAt.toISOString(),
       updatedAt: created.updatedAt.toISOString(),
       content,

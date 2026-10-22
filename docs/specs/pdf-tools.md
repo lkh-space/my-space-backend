@@ -132,18 +132,18 @@ last-updated: 2026-10-16
 ## 6. 예외 처리 및 에러 스펙 (Error Handling)
 
 > [!IMPORTANT]
-> 아래 에러 코드는 구현 시 `src/common/filters/domain-error-http.map.ts`에 동기화 등록되어야 합니다.
+> 아래 에러 코드는 구현 시 [`libs/common/src/filters/domain-error-http.map.ts`](../../libs/common/src/filters/domain-error-http.map.ts)에 동기화 등록되어야 합니다.
 
 | 에러 상황 | 발생 예외 클래스 | 에러 코드 (`code`) | HTTP Status | DOMAIN_ERROR_HTTP_MAP 등록 |
 | :--- | :--- | :--- | :--- | :--- |
 | 암호화된 PDF이나 비밀번호 미제공 | `PdfPasswordRequiredException` | `PDF_PASSWORD_REQUIRED` | 400 Bad Request | 필수 등록 |
 | 제공된 비밀번호 불일치 | `PdfInvalidPasswordException` | `PDF_INVALID_PASSWORD` | 400 Bad Request | 필수 등록 |
 | 암호 해제 시 암호화되지 않은 파일 | `PdfNotProtectedException` | `PDF_NOT_PASSWORD_PROTECTED` | 400 Bad Request | 필수 등록 |
-| 병합 파일 2개 미만 첨부 | `PdfFileCountException` | `PDF_MIN_FILE_COUNT_NOT_MET` | 400 Bad Request | 필수 등록 |
-| 최대 파일 개수(20개) 초과 | `PdfFileCountException` | `PDF_MAX_FILE_COUNT_EXCEEDED` | 400 Bad Request | 필수 등록 |
+| 병합 파일 2개 미만 첨부 | `PdfMinFilesException` | `PDF_MIN_FILE_COUNT_NOT_MET` | 400 Bad Request | 필수 등록 |
+| 최대 파일 개수(20개) 초과 | `PdfMaxFilesException` | `PDF_MAX_FILE_COUNT_EXCEEDED` | 400 Bad Request | 필수 등록 |
 | 파일 용량 한도 초과 | `PdfFileSizeExceededException` | `PDF_FILE_SIZE_EXCEEDED` | 413 Payload Too Large | 필수 등록 |
 | 유효하지 않은 페이지 범위 | `PdfInvalidPageRangeException` | `PDF_INVALID_PAGE_RANGE` | 400 Bad Request | 필수 등록 |
-| 손상되었거나 유효하지 않은 PDF | `PdfCorruptedFileException` | `PDF_CORRUPTED_FILE` | 422 Unprocessable Entity | 불필요 (기본값) |
+| 손상되었거나 유효하지 않은 PDF | `PdfCorruptedFileException` | `PDF_CORRUPTED_FILE` | 422 Unprocessable Entity | 등록 완료 (422) |
 
 ---
 

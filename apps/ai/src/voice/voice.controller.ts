@@ -41,7 +41,7 @@ import {
 import { AudioFileNotFoundException } from './exceptions/voice.exception.js';
 import { BaseDomainException } from '@app/common/exceptions/domain.exception.js';
 
-export const MAX_AUDIO_FILE_SIZE = 25 * 1024 * 1024; // 25MB (BR-A02)
+export const MAX_AUDIO_FILE_SIZE = 10 * 1024 * 1024; // 10MB (BR-J04)
 
 export const VOICE_AUDIO_LIMITS = {
   fileSize: MAX_AUDIO_FILE_SIZE,
@@ -53,7 +53,7 @@ export const VOICE_AUDIO_LIMITS = {
 @ApiTags('J.A.R.V.I.S. Voice & Neural Core')
 @ApiHeader({
   name: 'Remote-User',
-  description: '사용자 ID (프로덕션 필수, 로컬은 dev-admin)',
+  description: '사용자 ID (프로덕션 필수, 로컬은 local-admin)',
 })
 @UseGuards(RemoteUserGuard)
 @Controller('api/v1/ai')

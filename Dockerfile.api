@@ -30,6 +30,7 @@ COPY apps/ai/package.json ./apps/ai/
 COPY libs/common/package.json ./libs/common/
 COPY libs/storage/package.json ./libs/storage/
 COPY libs/config/package.json ./libs/config/
+COPY libs/markdown-core/package.json ./libs/markdown-core/
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile

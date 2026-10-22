@@ -30,7 +30,7 @@ import {
 @ApiTags('AI Chat')
 @ApiHeader({
   name: 'Remote-User',
-  description: '사용자 ID (프로덕션 필수, 로컬은 dev-admin)',
+  description: '사용자 ID (프로덕션 필수, 로컬은 local-admin)',
 })
 @UseGuards(RemoteUserGuard)
 @Controller('api/v1/ai/chat')

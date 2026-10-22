@@ -1,25 +1,25 @@
 ---
 status: implemented
 owner: Keunhyeok Lim
-last-updated: 2026-09-21
+last-updated: 2026-10-22
 ---
 
 # 전역 에러 처리 및 커스텀 예외 체계 사양서 (Error Handling Specification)
 
 ## 1. 개요 (Summary)
-NestJS 프레임워크 내장 `HttpException`에 대한 의존성을 제거하고, 비즈니스 도메인 로직과 HTTP 계층을 명확히 분리하기 위한 독자적인 커스텀 예외 체계와 전역 예외 필터(`AllExceptionsFilter`)를 정의합니다.
+NestJS 프레임워크 내장 `HttpException`에 대한 의존성을 제거하고, 비즈니스 도메인 로직과 HTTP 계층을 명확히 분리하기 위한 독자적인 커스텀 예외 체계와 RFC 7807(Problem Details) 표준을 준수하는 전역 예외 필터(`AllExceptionsFilter`)를 정의합니다.
 
 ## 2. 목표 및 제외 대상 (Goals / Non-goals)
 
 ### 목표 (Goals)
 * 프레임워크 독립적인 순수 TypeScript 기반 **도메인 예외 계층(`BaseDomainException`)** 수립
 * 컨트롤러, 가드 등 HTTP 계층에서 명시적 상태 코드를 지정할 수 있는 **API 예외(`ApiException`)** 수립
-* 모든 예외를 수신하여 일관된 클라이언트 JSON 응답 포맷으로 변환하는 **전역 예외 필터(`AllExceptionsFilter`)** 구현
-* Pino 로거와 연동하여 4xx 경고 로그 및 5xx 에러 풀 스택 로그 자동 수집
+* 모든 예외(도메인 예외, `HttpException`, Prisma `P2002`/`P2025`, Multer `LIMIT_FILE_SIZE` 등)를 수신하여 RFC 7807(`application/problem+json`) 표준 및 레거시 호환 필드를 포함한 JSON 응답 포맷으로 변환하는 **전역 예외 필터(`AllExceptionsFilter`)** 구현
+* Pino 로거와 연동하여 에러 및 분산 추적 ID(`traceId`) 로그 자동 수집
 * 환경(`IS_LOCAL`)에 따른 스택 트레이스(`stack`) 응답 마스킹/노출 분기
 
 ### 제외 대상 (Non-goals)
-* 특정 ORM/DB 전용 예외(TypeORM, Prisma 등)의 세부 필터링 (추후 DB 도입 시 확장)
+* 도메인 비즈니스 서비스 내부에서 Prisma/HTTP 예외에 직접 의존하는 강결합 처리 (인프라 예외 변환은 필터 또는 리포지토리 경계에서 처리)
 
 ## 3. 유스케이스 (Use Cases)
 
@@ -79,17 +79,28 @@ export class ApiException extends Error {
 }
 ```
 
-### 5.2. 클라이언트 표준 에러 응답 DTO
+### 5.2. 클라이언트 표준 에러 응답 DTO (RFC 7807 Problem Details 호환)
 
 ```typescript
 export interface ErrorResponseDto {
-  statusCode: number;
+  // RFC 7807 표준 필드
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  instance: string;
+
+  // 프로젝트 표준 확장 필드
   code: string;
-  message: string;
+  traceId?: string;
   timestamp: string;
-  path: string;
   details?: Record<string, unknown>;
   stack?: string; // IS_LOCAL=true 일 때만 노출
+
+  // 레거시 필드 (기존 클라이언트 및 E2E 테스트 호환성 유지)
+  statusCode: number;
+  message: string;
+  path: string;
 }
 ```
 
@@ -97,7 +108,7 @@ export interface ErrorResponseDto {
 
 도메인 에러 코드와 REST HTTP 상태 코드 간의 최신 매핑 현황 및 기본 폴백 정책은 아래의 소스 파일에서 단일 진실 공급원(Single Source of Truth)으로 관리하며 직접 확인합니다:
 
-* **매핑 정의 파일**: [`src/common/filters/domain-error-http.map.ts`](../../src/common/filters/domain-error-http.map.ts)
+* **매핑 정의 파일**: [`libs/common/src/filters/domain-error-http.map.ts`](../../libs/common/src/filters/domain-error-http.map.ts)
 
 > [!NOTE]
 > 도메인 에러 코드가 추가되거나 변경될 때마다 본 사양서의 중복 갱신을 방지하고 코드베이스와의 동기화 비용을 줄이기 위해, 상세 매핑 현황은 위의 소스 파일(`DOMAIN_ERROR_HTTP_MAP`)을 직접 확인합니다. 매핑 테이블에 등록되지 않은 임의의 도메인 에러는 자동으로 `DEFAULT_DOMAIN_HTTP_STATUS`(`422 Unprocessable Entity`)로 폴백 처리됩니다.

@@ -8,9 +8,9 @@
 
 ### 1.1 프로젝트 목적
 - **개인 맞춤형 유틸리티 백엔드 플랫폼**:
-  - 개발자 개인이 일상 및 업무에서 자주 사용하는 유틸리티성 기능들을 외부 상용 서비스에 의존하지 않고 높은 자유도와 보안성을 갖추어 직접 구현하고 호스팅하는 백엔드 공간입니다.
-- **점진적 확장성 (Monorepo-Ready)**:
-  - 현재는 단일 NestJS 애플리케이션으로 출발하지만, 기능이 추가되고 고도화됨에 따라 **Nest CLI 표준 모노레포(`apps/`, `libs/`)** 구조로 점진적 전환을 목표로 합니다.
+  - 개발자 개인이 일상 및 업무에서 자주 사용하는 유틸리티성 기능들(PDF 조작, 마크다운 지식 베이스, 개인화 AI Workspace 및 J.A.R.V.I.S. 음성 비서 등)을 외부 상용 서비스에 의존하지 않고 높은 자유도와 보안성을 갖추어 직접 구현하고 호스팅하는 백엔드 공간입니다.
+- **Nest CLI 표준 모노레포 아키텍처 (`apps/`, `libs/`)**:
+  - 메인 REST API 서버(`apps/api`)와 고부하 연산/스트리밍 중심의 AI Workspace 서버(`apps/ai`)를 물리적 프로세스로 분리 운영하며, 공통 도메인과 인프라 클라이언트는 `libs/` 공유 라이브러리로 캡슐화하여 재사용합니다.
 
 ---
 
@@ -20,12 +20,15 @@
 | :--- | :--- | :--- |
 | **Framework** | NestJS | v12.0.x (최신 ESM 아키텍처) |
 | **Runtime** | Node.js | v24.x (Native ESM - `"type": "module"`) |
-| **Language** | TypeScript | v6.x (Nest CLI 컴파일러 API 호환성 유지) |
-| **Package Manager** | pnpm | v12.x (Corepack 연동) |
-| **Testing** | Vitest | v4.x (NestJS 12 기본 러너, 빠른 ESM 네이티브 테스트) |
+| **Language & Builder** | TypeScript, Rspack | TypeScript v6.x (`module: nodenext`), `@rspack/core` 초고속 번들링 |
+| **Package Manager** | pnpm (Workspaces) | v12.x (Corepack 연동, `apps/*` 및 `libs/*` 멀티 패키지 관리) |
+| **Database & Storage** | PostgreSQL, MinIO | Prisma ORM v6.x, AWS SDK v3 S3 호환 오브젝트 스토리지 |
+| **Search & Broker** | OpenSearch, Qdrant, RabbitMQ | 전문 풀텍스트 검색, 768차원 시맨틱 벡터 DB, `amqplib` 비동기 큐(DLX/DLQ) |
+| **AI Providers** | Google Gemini, Ollama | `gemini-3.8-flash` / `gemini-embedding-001` (운영), `qwen3.5:0.8b` (로컬) |
+| **Testing** | Vitest, Testcontainers | v4.x (BDD 스타일 단위 테스트 및 PostgreSQL 컨테이너 기반 E2E 테스트) |
 | **Linting & Formatting** | oxlint, Prettier | 초고속 정적 분석 및 포맷팅 |
-| **Logging** | Pino (`nestjs-pino`) | Loki 호환 단일 라인 JSON & 로컬 들여쓰기 JSON |
-| **Authentication** | Authelia | Reverse Proxy Forward Auth 연동 |
+| **Logging & Tracing** | Pino (`nestjs-pino`) | Loki 호환 단일 라인 JSON & `AsyncLocalStorage` 기반 `TraceContextService` |
+| **Authentication** | Authelia | Reverse Proxy Forward Auth 연동 (`RemoteUserGuard`, Fail-Closed) |
 
 ---
 
@@ -89,9 +92,9 @@ graph LR
 
 | 구분 | 식별자 패턴 | 예시 |
 | :--- | :--- | :--- |
-| **비즈니스 규칙 (Business Rules)** | `BR-<도메인이니셜><두자리숫자>` | `BR-P01` (PDF), `BR-D01` (DBML) |
-| **유스케이스 (Use Cases)** | `UC-<도메인이니셜><두자리숫자>` | `UC-P01` (PDF), `UC-D01` (DBML) |
-| **아키텍처 의사결정 (ADR)** | `ADR-<네자리숫자>` | `ADR-0001`, `ADR-0002` |
+| **비즈니스 규칙 (Business Rules)** | `BR-<도메인이니셜><두자리숫자>` | `BR-P01` (PDF), `BR-M01` (Markdown), `BR-A01` (AI) |
+| **유스케이스 (Use Cases)** | `UC-<도메인이니셜><두자리숫자>` | `UC-P01` (PDF), `UC-M01` (Markdown), `UC-J01` (Jarvis) |
+| **아키텍처 의사결정 (ADR)** | `ADR-<네자리숫자>` | `ADR-0001`, `ADR-0002`, `ADR-0003` |
 
 ### 3.5. 스펙 동기화 의무 (Spec Sync Obligation)
 - `docs/specs/` 하위의 사양서는 일회성 문서가 아닌 **코드베이스의 단일 진실 공급원(Single Source of Truth)**입니다.
@@ -99,31 +102,41 @@ graph LR
 
 ---
 
-## 4. 아키텍처 및 모노레포 전환 전략
+## 4. 아키텍처 및 모노레포 디렉토리 구조
 
 ### 4.1 Nest CLI 표준 모노레포 구조
-향후 확장은 `nest-cli` 표준 모노레포 형태를 채택합니다:
+본 프로젝트는 `nest-cli` 표준 모노레포 및 `pnpm Workspaces` 형태를 채택합니다:
 
 ```text
 my-space-backend/
 ├── .agents/
 │   └── AGENTS.md                  # 에이전트 가이드라인 (본 파일)
-├── nest-cli.json                  # Nest CLI 설정
+├── nest-cli.json                  # Nest CLI 모노레포 및 Rspack 빌더 설정
+├── pnpm-workspace.yaml            # pnpm 워크스페이스 패키지 구성 (apps/*, libs/*)
+├── prisma/
+│   ├── migrations/                # PostgreSQL 마이그레이션 히스토리
+│   └── schema.prisma              # Prisma 단일 데이터 스키마
 ├── docs/                          # SDD 사양서 및 ADR
 │   ├── specs/
 │   └── adr/
 ├── apps/
-│   └── api/                       # 메인 API 서버 (진입점, 라우팅, HTTP 컨트롤러)
-│       └── src/
+│   ├── api/                       # 메인 REST API 서버 (@my-space/api, 기본 포트 3000)
+│   │   └── src/                   # auth, markdown, pdf 도메인 컨트롤러 및 서비스
+│   └── ai/                        # AI Workspace & J.A.R.V.I.S. 음성 비서 서버 (@my-space/ai, 기본 포트 3001)
+│       └── src/                   # chat, indexing, providers, search, sessions, tools, voice
 └── libs/                          # 비즈니스 도메인 및 공유 라이브러리
-    ├── <feature-core>/            # 도메인별 핵심 라이브러리 (독립 순수 TS 비즈니스 로직)
-    ├── auth-authelia/             # Authelia 연동 가드 및 데코레이터
-    └── common/                    # 공통 예외 필터, 유틸리티, 로거
+    ├── common/                    # @app/common: CoreHttpModule, RemoteUserGuard, AllExceptionsFilter,
+    │                              #              AuditLogInterceptor, ZodValidationPipe, Health, Version, safeMatter
+    ├── config/                    # @app/config: Zod 환경변수 검증(env.validation) 및 도메인별 registerAs 설정
+    ├── storage/                   # @app/storage: Prisma, MinIO, OpenSearch, Qdrant, RabbitMQ 클라이언트 모듈
+    └── markdown-core/             # @app/markdown-core: api와 ai가 공유하는 마크다운 쓰기/태그 해석 코어 서비스
 ```
 
-- **라이브러리 추출 원칙**:
+- **라이브러리 추출 및 참조 원칙**:
   - 새로운 기능을 구현할 때 HTTP 요청 처리(컨트롤러)와 비즈니스 연산 로직을 강하게 결합하지 않습니다.
-  - 서비스/도메인 로직은 독립적인 라이브러리로 분리 가능한 구조를 유지합니다.
+  - 여러 앱(`apps/api`, `apps/ai`)이 공유하는 도메인 로직이나 인프라 클라이언트는 `libs/` 하위로 분리하고, `tsconfig.json`에 정의된 경로 별칭(`@app/common`, `@app/config`, `@app/storage`, `@app/markdown-core`)을 통해 임포트합니다.
+- **공통 HTTP 횡단 관심사 (`CoreHttpModule`)**:
+  - 모든 HTTP 애플리케이션(`apps/api`, `apps/ai`)은 [`libs/common/src/core/core-http.module.ts`](file:///Users/limkeunhyeok/workspace/my-space-backend/libs/common/src/core/core-http.module.ts)의 `CoreHttpModule`을 임포트하여 전역 가드(`RemoteUserGuard`), 전역 예외 필터(`AllExceptionsFilter`), 감사 로그 인터셉터(`AuditLogInterceptor`), 입력 검증 파이프(`ZodValidationPipe`), 분산 추적 미들웨어(`TraceContextMiddleware`)를 일관되게 적용합니다.
 
 ---
 
@@ -149,13 +162,15 @@ Authelia는 자체 인프라의 리버스 프록시(Traefik, Nginx 등)와 연�
 | `Remote-Groups` | 사용자 권한 그룹 (쉼표 구분) | `admin,developer` |
 | `Remote-Name` | 사용자 실명 / 표시명 | `Keunhyeok Lim` |
 
-- **`AutheliaAuthGuard` 표준**:
-  - 요청 헤더에서 `Remote-User`를 검증하고, 유효한 경우 `req.user` 객체에 바인딩합니다.
-  - 헤더가 누락되었거나 비정상인 경우 `401 Unauthorized` 예외를 발생시킵니다.
+- **`RemoteUserGuard` 표준 (`libs/common/src/guards/remote-user.guard.ts`)**:
+  - `CoreHttpModule`을 통해 전역 기본 가드(`APP_GUARD`)로 등록되어 모든 엔드포인트에 기본 적용(Secure by Default)됩니다. 인증이 불필요한 공개 엔드포인트(헬스체크, 버전 등)는 반드시 `@Public()` 데코레이터를 명시합니다.
+  - 요청 헤더에서 `Remote-User`를 검증(`/^[a-zA-Z0-9._@-]{1,100}$/`)하고, 유효한 경우 `req.user`(`AuthUser`) 객체에 바인딩합니다.
+  - 비로컬 환경에서 `AUTH_FORWARDED_SECRET`이 설정된 경우 `X-Forwarded-Auth-Secret` 헤더 일치 여부를 검증하여 프록시 우회 직접 접근을 차단합니다.
+  - 헤더가 누락되었거나 비정상인 경우 `401 Unauthorized` 예외를 발생시킵니다 (Fail-Closed).
 - **`@CurrentUser()` 커스텀 데코레이터**:
   - 컨트롤러에서 `req.user`를 편리하고 안전하게 주입받아 사용할 수 있도록 표준화합니다.
 - **로컬 개발 바이패스 (`IS_LOCAL=true`)**:
-  - 로컬 환경(`IS_LOCAL=true`)에서는 Authelia 프록시 없이도 테스트할 수 있도록, Mock 사용자(`dev-admin`)를 주입하거나 테스트용 헤더를 허용하는 방어 코드를 갖춥니다.
+  - 명시적으로 `IS_LOCAL=true`가 설정된 로컬 개발 환경에서만 `Remote-User` 헤더 부재 시 Mock 사용자(`MOCK_LOCAL_USER`, `username: 'local-admin'`)를 자동 주입합니다.
 
 ---
 
@@ -164,15 +179,17 @@ Authelia는 자체 인프라의 리버스 프록시(Traefik, Nginx 등)와 연�
 본 프로젝트는 비즈니스 도메인과 전송 프로토콜(HTTP, gRPC, GraphQL 등)의 완전한 결합 분리를 지향합니다. AI 에이전트는 새로운 기능을 개발하거나 예외를 추가할 때 다음 프로토콜을 **반드시 준수**해야 합니다:
 
 ### 6.1. 도메인 예외 정의 원칙
-1. **`BaseDomainException` 상속**: 모든 비즈니스/도메인 예외는 `src/common/exceptions/domain.exception.ts`의 `BaseDomainException`을 상속받아야 합니다.
+1. **`BaseDomainException` 상속**: 모든 비즈니스/도메인 예외는 [`libs/common/src/exceptions/domain.exception.ts`](file:///Users/limkeunhyeok/workspace/my-space-backend/libs/common/src/exceptions/domain.exception.ts)의 `BaseDomainException`을 상속받아야 합니다.
 2. **프레임워크 무의존**: 도메인 예외 클래스는 `@nestjs/common`이나 HTTP 상태 코드(400, 404 등)를 일절 임포트하거나 의존해서는 안 됩니다.
-3. **고유 비즈니스 에러 코드 선언**: 디버깅과 클라이언트 식별을 위해 고유한 `code: string`을 필수로 선언합니다 (예: `PDF_PASSWORD_PROTECTED`, `DBML_SYNTAX_ERROR`). 에러 코드 문자열에 특정 접미사 규칙은 필요 없습니다.
+3. **고유 비즈니스 에러 코드 선언**: 디버깅과 클라이언트 식별을 위해 고유한 `code: string`을 필수로 선언합니다 (예: `PDF_PASSWORD_REQUIRED`, `DOCUMENT_VERSION_CONFLICT`). 에러 코드 문자열에 특정 접미사 규칙은 필요 없습니다.
 
-### 6.2. 전송 계층 매핑 테이블 동기화 의무 (`DOMAIN_ERROR_HTTP_MAP`)
+### 6.2. 전송 계층 매핑 테이블 동기화 의무 (`DOMAIN_ERROR_HTTP_MAP`) 및 RFC 7807 응답
 - **매핑 등록 의무**:
-  - 도메인 예외가 REST API 요청 시 특정 HTTP 상태 코드(404, 409, 401, 403, 500, 400 등)로 변환되어야 하는 경우, **반드시 [`src/common/filters/domain-error-http.map.ts`](file:///Users/limkeunhyeok/workspace/my-space-backend/src/common/filters/domain-error-http.map.ts)의 `DOMAIN_ERROR_HTTP_MAP` 객체에 해당 에러 코드를 등록**해야 합니다.
+  - 도메인 예외가 REST API 요청 시 특정 HTTP 상태 코드(404, 409, 401, 403, 500, 400 등)로 변환되어야 하는 경우, **반드시 [`libs/common/src/filters/domain-error-http.map.ts`](file:///Users/limkeunhyeok/workspace/my-space-backend/libs/common/src/filters/domain-error-http.map.ts)의 `DOMAIN_ERROR_HTTP_MAP` 객체에 해당 에러 코드를 등록**해야 합니다.
 - **기본 폴백 (422 Unprocessable Entity)**:
   - 매핑 테이블에 등록되지 않은 임의의 도메인 에러 코드는 일반 비즈니스 규칙 위반으로 간주되어 자동으로 `422 Unprocessable Entity` 상태 코드로 응답됩니다.
+- **RFC 7807 Problem Details 표준 준수**:
+  - 모든 예외는 [`AllExceptionsFilter`](file:///Users/limkeunhyeok/workspace/my-space-backend/libs/common/src/filters/all-exceptions.filter.ts)에 의해 `application/problem+json` 미디어 타입 및 RFC 7807 필드(`type`, `title`, `status`, `detail`, `instance`, `code`, `traceId`, `timestamp`)와 레거시 호환 필드(`statusCode`, `message`, `path`)를 포함한 규격으로 반환됩니다.
 - **다중 프로토콜 확장 원칙**:
   - 향후 gRPC나 GraphQL을 도입할 때도 도메인 코드는 일절 수정하지 않으며, 전송 계층 전용 매핑 어댑터(`domain-error-grpc.map.ts` 등)만 추가합니다.
 
@@ -198,10 +215,12 @@ AI 에이전트는 본 프로젝트의 코드를 작성하거나 리팩토링할
      4. `pnpm run test` (Vitest 단위 테스트 검증, 필요한 경우 `pnpm run test:e2e` 실행)
 5. **ESM 모듈 임포트 규칙 (필수)**:
    - 본 프로젝트는 Node.js Native ESM(`"type": "module"`) 환경입니다.
-   - 프로젝트 내부의 로컬 파일/모듈을 임포트할 때는 **반드시 `.js` 확장자를 명시**해야 합니다. (예: `import { ... } from './common/logger/logger.config.js'`)
+   - 프로젝트 내부의 로컬 파일/모듈을 임포트할 때는 **반드시 `.js` 확장자를 명시**해야 합니다. (예: `import { ... } from '@app/common/logger/logger.config.js'`)
 6. **TypeScript 버전 제약**:
    - Nest CLI의 내부 컴파일러 API 호환성을 위해 TypeScript는 **6.x 버전**을 유지합니다. (7.x로 임의 업그레이드 금지)
 7. **도메인 에러 코드 매핑 의무 (Error Mapping Obligation)**:
-   - 새로운 비즈니스 기능 및 도메인 예외를 작성할 때, 의도한 HTTP 상태 코드가 반환되도록 `src/common/filters/domain-error-http.map.ts`의 `DOMAIN_ERROR_HTTP_MAP` 등록 여부를 반드시 점검하고 동기화합니다.
-8. **BDD 테스트 작성 원칙 (Given-When-Then)**:
+   - 새로운 비즈니스 기능 및 도메인 예외를 작성할 때, 의도한 HTTP 상태 코드가 반환되도록 [`libs/common/src/filters/domain-error-http.map.ts`](file:///Users/limkeunhyeok/workspace/my-space-backend/libs/common/src/filters/domain-error-http.map.ts)의 `DOMAIN_ERROR_HTTP_MAP` 등록 여부를 반드시 점검하고 동기화합니다.
+8. **안전한 마크다운 Frontmatter 파싱 (`safeMatter`)**:
+   - 마크다운 Frontmatter를 파싱할 때는 RCE 취약점(`---js` 등 실행 엔진) 방어를 위해 `gray-matter`를 직접 호출하지 않고, 반드시 `@app/common`의 [`safeMatter`](file:///Users/limkeunhyeok/workspace/my-space-backend/libs/common/src/markdown/safe-matter.ts) 유틸리티를 사용합니다.
+9. **BDD 테스트 작성 원칙 (Given-When-Then)**:
    - 모든 단위 테스트 및 통합 테스트(Vitest)는 BDD 스타일을 준수하며, 테스트 본문을 `// given`, `// when`, `// then` 주석으로 명확히 구분하여 작성합니다.

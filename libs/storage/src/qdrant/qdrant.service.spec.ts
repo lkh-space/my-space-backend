@@ -137,7 +137,7 @@ describe('QdrantService (BDD 단위 테스트 M-11)', () => {
               title: '테스트',
               heading: '소개',
               content: '본문',
-              embeddingModel: 'text-embedding-004',
+              embeddingModel: 'gemini-embedding-001',
             },
           },
         ],
@@ -147,7 +147,7 @@ describe('QdrantService (BDD 단위 테스트 M-11)', () => {
       const results = await service.searchPoints('user-1', vector, 5, {
         folderId: 'folder-1',
         tags: ['ai'],
-        embeddingModel: 'text-embedding-004',
+        embeddingModel: 'gemini-embedding-001',
       });
 
       // then
@@ -159,7 +159,7 @@ describe('QdrantService (BDD 단위 테스트 M-11)', () => {
           filter: {
             must: [
               { key: 'ownerId', match: { value: 'user-1' } },
-              { key: 'embeddingModel', match: { value: 'text-embedding-004' } },
+              { key: 'embeddingModel', match: { value: 'gemini-embedding-001' } },
               { key: 'folderId', match: { value: 'folder-1' } },
               { key: 'tags', match: { value: 'ai' } },
             ],
@@ -167,7 +167,7 @@ describe('QdrantService (BDD 단위 테스트 M-11)', () => {
         }),
       );
       expect(results).toHaveLength(1);
-      expect(results[0].payload.embeddingModel).toBe('text-embedding-004');
+      expect(results[0].payload.embeddingModel).toBe('gemini-embedding-001');
     });
   });
 });

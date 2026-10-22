@@ -129,6 +129,5 @@ sequenceDiagram
 
 ## 참고 및 관련 정보 (More Information)
 
-* [BACKEND_VOICE_AI_INTERFACE.md](../../BACKEND_VOICE_AI_INTERFACE.md)
 * [ADR-0001: Nest CLI 표준 모노레포 구조 채택 및 AI 로직 서버 독립 분리](./0001-nest-cli-monorepo-ai-service-separation.md)
 * [docs/specs/jarvis-voice-assistant.md](../specs/jarvis-voice-assistant.md)

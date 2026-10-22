@@ -24,7 +24,7 @@ import {
 @ApiTags('AI Search')
 @ApiHeader({
   name: 'Remote-User',
-  description: '사용자 ID (프로덕션 환경 필수, 로컬은 dev-admin 주입)',
+  description: '사용자 ID (프로덕션 환경 필수, 로컬은 local-admin 주입)',
 })
 @UseGuards(RemoteUserGuard)
 @Controller('api/v1/ai/search')

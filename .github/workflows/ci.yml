@@ -41,6 +41,9 @@ jobs:
       - name: Run Linter (oxlint)
         run: pnpm run lint
 
+      - name: Run Typecheck (tsc --noEmit)
+        run: pnpm run typecheck
+
       - name: Run Unit Tests (vitest)
         run: pnpm run test
 

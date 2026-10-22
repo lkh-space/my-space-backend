@@ -55,7 +55,7 @@ export const envSchema = z.object({
   // Google Gemini
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
-  GEMINI_EMBEDDING_MODEL: z.string().default('text-embedding-004'),
+  GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
 
   // Ollama
   OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),

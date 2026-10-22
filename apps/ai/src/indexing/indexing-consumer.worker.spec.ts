@@ -34,7 +34,7 @@ describe('IndexingConsumerWorker (인덱싱 워커 H-4 멱등성 및 원자적 �
 
     mockEmbeddingProvider = {
       name: 'gemini',
-      embeddingModel: 'text-embedding-004',
+      embeddingModel: 'gemini-embedding-001',
       embedText: vi.fn().mockResolvedValue(Array.from({ length: 768 }, () => 0.1)),
       embedBatch: vi.fn().mockImplementation(async (texts: string[]) => {
         return texts.map(() => Array.from({ length: 768 }, () => 0.1));
@@ -110,7 +110,7 @@ describe('IndexingConsumerWorker (인덱싱 워커 H-4 멱등성 및 원자적 �
             payload: expect.objectContaining({
               version: 2,
               documentId: 'doc-1',
-              embeddingModel: 'text-embedding-004',
+              embeddingModel: 'gemini-embedding-001',
             }),
           }),
         ]),

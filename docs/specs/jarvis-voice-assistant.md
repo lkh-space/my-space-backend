@@ -10,7 +10,7 @@ last-updated: 2026-10-09
 
 본 문서는 프론트엔드(`my-space-frontend`)의 **실시간 음성 상호작용 중심 SF 비서(J.A.R.V.I.S. Neural Core)** 전면 리디자인에 맞추어 백엔드 AI 서비스(`apps/ai`)의 음성 입력(STT), 실시간 추론 및 텔레메트리 스트리밍(SSE), 음성 합성(TTS), 그리고 즉시 발화 인터럽트(Interrupt) 파이프라인을 정의하는 기능 명세서입니다.
 
-`BACKEND_VOICE_AI_INTERFACE.md`를 단일 진실 공급원(SSOT)으로 하며, 기존 단발성/텍스트 전용 챗봇 구조에서 **멀티모달 실시간 음성 비서 파이프라인**으로 확장합니다.
+본 사양서를 단일 진실 공급원(SSOT)으로 삼아, 기존 단발성/텍스트 전용 챗봇 구조에서 **멀티모달 실시간 음성 비서 파이프라인**으로 확장합니다.
 
 ---
 
@@ -21,15 +21,15 @@ last-updated: 2026-10-09
   - `LIVE`, `idle`, `saved` 상태를 갖는 신경망 스트림 세션 생성 및 목록 조회.
 * **음성/텍스트 멀티모달 SSE 스트리밍 (`POST /api/v1/ai/voice/stream`)**:
   - PTT 음성 녹음 Blob(`multipart/form-data`) 및 텍스트 후속 질의(`application/json`) 동시 지원.
-  - 전사 텍스트(`transcription`), 토큰(`token`), 벤치마크 지표(`benchmark`), Qdrant 참조 문서(`context_ref`), 완성 오디오(`audio_complete`), 스트림 종료(`done`), 오류(`error`) 8대 이벤트 전송.
+  - 전사 텍스트(`transcription`), 토큰(`token`), 벤치마크 지표(`benchmark`), Qdrant 참조 문서(`context_ref`), 완성 오디오(`audio_complete`), 스트림 종료(`done`), 오류(`error`) 이벤트 전송.
 * **초저지연 발화 중단 (Interrupt) 메커니즘 (`POST /api/v1/ai/chat/interrupt`)**:
   - 스페이스바 입력 시 세션별 `AbortController`를 트리거하여 진행 중인 LLM 추론 및 TTS 합성을 50ms 이내에 즉각 중단.
 * **플러그형 음성 엔진 (STT/TTS) 추상화**:
   - Phase 1 모의/경량 엔진 지원 및 Phase 2 Piper TTS / Whisper STT 플러그형 Provider 연계.
 * **합성 오디오 서빙 (`GET /api/v1/ai/audio/:id`)**:
   - 합성된 WAV/Opus 음성 버퍼를 스트리밍 또는 파일 형태로 브라우저 캡슐 플레이어에 서빙.
-* **음성 엔진 헬스체크 확장 (`GET /health`)**:
-  - 기존 서버 상태 외에 음성 파이프라인(WASM/Piper/Whisper) 런타임 진단 필드 제공.
+* **공통 헬스체크 연동 (`GET /health`, `GET /health/ready`)**:
+  - `@app/common`의 `HealthModule`을 통해 AI 및 음성 비서 서버의 프로세스 상태와 인프라(DB, RabbitMQ, MinIO, Qdrant) 준비 상태를 진단.
 
 ### 제외 대상 (Non-goals)
 * 양방향 Full-Duplex WebRTC 실시간 음성 통화 (Phase 1에서는 HTTP Multipart + SSE 방식으로 구현)

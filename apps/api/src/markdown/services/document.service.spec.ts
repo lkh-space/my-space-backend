@@ -4,6 +4,7 @@ import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 import { MinioService } from '@app/storage/minio/minio.service.js';
 import { OpenSearchService } from '@app/storage/opensearch/opensearch.service.js';
 import { RabbitmqService } from '@app/storage/rabbitmq/rabbitmq.service.js';
+import { MarkdownWriterService, TagResolverService } from '@app/markdown-core';
 import { TagService } from './tag.service.js';
 import {
   DocumentNotFoundException,
@@ -65,12 +66,26 @@ describe('DocumentService', () => {
       resolveTags: vi.fn().mockResolvedValue(['t-1']),
     } as unknown as TagService;
 
+    const tagResolverService = {
+      resolveTags: (ownerId: string, tagNames: string[], tx?: any) =>
+        tagService.resolveTags(ownerId, tagNames, tx),
+    } as unknown as TagResolverService;
+
+    const markdownWriterService = new MarkdownWriterService(
+      prisma,
+      minioService,
+      openSearchService,
+      rabbitmqService,
+      tagResolverService,
+    );
+
     service = new DocumentService(
       prisma,
       minioService,
       openSearchService,
       rabbitmqService,
       tagService,
+      markdownWriterService,
     );
   });
 

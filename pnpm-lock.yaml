@@ -323,6 +323,8 @@ importers:
 
   libs/config: {}
 
+  libs/markdown-core: {}
+
   libs/storage: {}
 
 packages:

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MarkdownCoreModule } from '@app/markdown-core';
 import { FolderController } from './controllers/folder.controller.js';
 import { FolderService } from './services/folder.service.js';
 import { TagController } from './controllers/tag.controller.js';
@@ -14,6 +15,7 @@ import { AssetController } from './controllers/asset.controller.js';
 import { AssetService } from './services/asset.service.js';
 
 @Module({
+  imports: [MarkdownCoreModule],
   controllers: [
     FolderController,
     TagController,

@@ -1,34 +1,38 @@
 # My Space Backend (`my-space-backend`)
 
 > **개인 맞춤형 유틸리티 백엔드 플랫폼 (NestJS 모노레포)**  
-> 개발자 개인이 일상 및 업무에서 사용하는 PDF 조작, 마크다운 지식 베이스, 그리고 AI Workspace(RAG & Tool Calling)를 외부 상용 서비스에 의존하지 않고 높은 자유도와 보안성을 갖추어 직접 호스팅하는 백엔드 공간입니다.
+> 개발자 개인이 일상 및 업무에서 사용하는 PDF 조작, 마크다운 지식 베이스, 그리고 AI Workspace(RAG, Tool Calling, J.A.R.V.I.S. 음성 비서)를 외부 상용 서비스에 의존하지 않고 높은 자유도와 보안성을 갖추어 직접 호스팅하는 백엔드 공간입니다.
 
 ---
 
 ## 1. 아키텍처 개요 (Monorepo Architecture)
 
-본 프로젝트는 **Nest CLI 표준 모노레포(`apps/`, `libs/`)** 아키텍처를 채택하여 비즈니스 유틸리티 API와 AI 연산 서비스를 독립적인 프로세스로 격리 운영합니다.
+본 프로젝트는 **Nest CLI 표준 모노레포(`apps/`, `libs/`)** 및 **pnpm Workspaces** 아키텍처를 채택하여 비즈니스 유틸리티 API와 AI 연산 서비스를 독립적인 프로세스로 격리 운영합니다.
 
 ```text
 my-space-backend/
 ├── apps/
 │   ├── api/                           # 메인 백엔드 REST API 서버 (포트 3000)
 │   │   ├── src/auth/                  # Authelia SSO 사용자 프로필 연동
-│   │   ├── src/health/                # K8s Liveness/Readiness 헬스체크
 │   │   ├── src/markdown/              # 마크다운 문서/폴더/태그/리비전/검색/에셋 관리
-│   │   ├── src/pdf/                   # PDF 검사/암호해제/병합/범위분할
-│   │   └── src/version/               # Git 브랜치, 커밋 해시 메타데이터
-│   └── ai/                            # AI Workspace 독립 서비스 (포트 3001)
+│   │   └── src/pdf/                   # PDF 검사/암호해제/병합/범위분할/낱장분할
+│   └── ai/                            # AI Workspace & J.A.R.V.I.S. 음성 비서 서버 (포트 3001)
 │       ├── src/chat/                  # 단발성 대화 & SSE 실시간 스트리밍 엔드포인트
-│       ├── src/indexing/              # RabbitMQ 비동기 마크다운 인덱싱 워커
-│       ├── src/providers/             # Gemini 3.8 Flash & Ollama (qwen3.5:0.8b) Provider
+│       ├── src/indexing/              # RabbitMQ 비동기 마크다운 인덱싱 워커 (멱등 색인)
+│       ├── src/providers/             # Gemini 3.8 Flash, Ollama (qwen3.5:0.8b), STT/TTS Provider
 │       ├── src/search/                # Qdrant 기반 768차원 시맨틱 벡터 검색
+│       ├── src/sessions/              # 신경망 스트림 세션 라이프사이클 관리
 │       ├── src/tools/                 # AI Tool Calling 3종 (검색/열람/마크다운저장)
-│       └── src/utils/                 # 헤딩/코드블록 보존 마크다운 청커
+│       ├── src/utils/                 # 헤딩/코드블록 보존 마크다운 청커 & UUID v5 생성기
+│       └── src/voice/                 # J.A.R.V.I.S. 실시간 음성/텍스트 SSE 스트리밍 & 인터럽트
 ├── libs/                              # 공유 도메인 및 스토리지 라이브러리
-│   ├── common/                        # 인증 가드, 데코레이터, 전역 예외 필터, Pino 로거
+│   ├── common/                        # CoreHttpModule, RemoteUserGuard, RFC 7807 예외 필터, Health, Version, safeMatter
 │   ├── config/                        # Zod 환경변수 검증 및 도메인별 Config 네임스페이스
+│   ├── markdown-core/                 # api와 ai가 공유하는 원자적 마크다운 저장/태그 해석 서비스
 │   └── storage/                       # Prisma, MinIO, OpenSearch, Qdrant, RabbitMQ 연동
+├── prisma/
+│   ├── migrations/                    # PostgreSQL 마이그레이션 히스토리
+│   └── schema.prisma                  # 단일 데이터베이스 스키마
 ├── docs/
 │   ├── adr/                           # 아키텍처 의사결정 기록 (MADR 4.0.0)
 │   └── specs/                         # 도메인별 SDD 기능 사양서 (Single Source of Truth)
@@ -42,15 +46,15 @@ my-space-backend/
 | 영역 | 기술 스택 / 도구 | 상세 설명 |
 | :--- | :--- | :--- |
 | **Framework** | NestJS v12 (Native ESM) | Node.js v24 (`"type": "module"`), NodeNext 모듈 해석 |
-| **Language** | TypeScript v6.x | Nest CLI 컴파일러 API 호환성 유지 |
-| **Package Manager** | pnpm v12.x | Corepack 연동, Native ESM Subpath Imports (`#common/*`, `#storage/*`, `#config/*`) |
-| **Testing & Lint** | Vitest v4.x, oxlint | 초고속 BDD 단위/E2E 테스트 및 정적 분석 |
+| **Language & Builder** | TypeScript v6.x, Rspack | `@rspack/core` 초고속 번들링, TS Path Aliases (`@app/common`, `@app/config`, `@app/storage`, `@app/markdown-core`) |
+| **Package Manager** | pnpm v12.x (Workspaces) | Corepack 연동, 앱/라이브러리 멀티 패키지 관리 |
+| **Testing & Lint** | Vitest v4.x, oxlint | 초고속 BDD 단위/E2E 테스트(Testcontainers) 및 정적 분석 |
 | **Primary Database** | PostgreSQL, Prisma ORM | 마크다운 메타데이터, 계층 폴더, 태그, 리비전 이력 |
-| **Object Storage** | MinIO (S3 호환) | 마크다운 원본 본문(`.md`), 첨부 이미지 에셋, PDF 임시 파일 |
+| **Object Storage** | MinIO (S3 호환) | 마크다운 원본 본문(`.md`), 첨부 이미지 에셋, 리비전 스냅샷 |
 | **Search Engines** | OpenSearch & Qdrant | 제목/본문/태그 풀텍스트 검색(OpenSearch) & 768차원 시맨틱 벡터 검색(Qdrant) |
-| **Message Queue** | RabbitMQ | 문서 생성/수정/삭제 시 AI 인덱싱 큐(`markdown-indexing-queue`) 비동기 발행 |
-| **AI Providers** | Google Gemini & Ollama | `gemini-3.8-flash` / `text-embedding-004` (운영), `qwen3.5:0.8b` (로컬) |
-| **Authentication** | Authelia Forward Auth | Reverse Proxy HTTP 헤더(`Remote-User`, `Remote-Groups` 등) 기반 사용자 격리 |
+| **Message Queue** | RabbitMQ | 문서 생성/수정/삭제 시 AI 인덱싱 큐(`markdown-indexing-queue`, DLX/DLQ/Retry) 비동기 발행 |
+| **AI Providers** | Google Gemini & Ollama | `gemini-3.8-flash` / `gemini-embedding-001` (운영), `qwen3.5:0.8b` (로컬) |
+| **Authentication** | Authelia Forward Auth | Reverse Proxy HTTP 헤더(`Remote-User`, `Remote-Groups` 등) 기반 Fail-Closed 사용자 격리 |
 
 ---
 
@@ -84,7 +88,7 @@ $ pnpm run build:ai
 
 # 프로덕션 실행
 $ pnpm run start:api:prod       # node dist/apps/api/main.js
-$ pnpm run start:ai:prod        # node dist/apps/ai/main.js
+$ pnpm run start:ai:prod        # PORT=3001 node dist/apps/ai/main.js
 ```
 
 ### 3.3 코드 검증 및 테스트
@@ -93,10 +97,13 @@ $ pnpm run start:ai:prod        # node dist/apps/ai/main.js
 # 정적 분석 (oxlint)
 $ pnpm run lint
 
+# 타입 정합성 검사 (tsc --noEmit)
+$ pnpm run typecheck
+
 # 코드 포맷팅 (prettier)
 $ pnpm run format
 
-# 전체 단위 테스트 실행 (Vitest 158개 테스트)
+# 전체 단위 테스트 실행 (Vitest BDD 테스트)
 $ pnpm run test
 
 # 테스트 감시 모드
@@ -105,7 +112,7 @@ $ pnpm run test:watch
 # 테스트 커버리지 리포트
 $ pnpm run test:cov
 
-# E2E 테스트 실행
+# E2E 통합 테스트 실행 (Testcontainers PostgreSQL)
 $ pnpm run test:e2e
 ```
 
@@ -133,11 +140,15 @@ $ cp .env.ai.example .env.ai
 각 서버 구동 후 브라우저에서 대화형 Swagger 문서를 확인할 수 있습니다:
 
 - **메인 API 서버**: [http://localhost:3000/docs](http://localhost:3000/docs)
-  - System, Auth, PDF, Markdown Documents/Folders/Tags/Revisions/Search/Assets
+  - System (`/health`, `/health/ready`, `/version`), Auth (`/api/v1/auth/me`), PDF, Markdown Documents/Folders/Tags/Revisions/Search/Assets
 - **AI Workspace 서버**: [http://localhost:3001/docs](http://localhost:3001/docs)
   - `POST /api/v1/ai/search`: 개인 문서 시맨틱 벡터 검색
   - `POST /api/v1/ai/chat`: 단발성 대화 및 자동 Tool Calling 루프
   - `POST /api/v1/ai/chat/stream`: SSE 실시간 스트리밍 대화
+  - `GET / POST /api/v1/ai/sessions`: J.A.R.V.I.S. 신경망 스트림 세션 조회 및 생성
+  - `POST /api/v1/ai/voice/stream`: 음성(PTT Blob) 및 텍스트 멀티모달 SSE 스트리밍
+  - `POST /api/v1/ai/chat/interrupt`: 진행 중인 LLM/TTS 스트림 즉시 중단
+  - `GET /api/v1/ai/audio/:id`: 합성된 오디오 파일 다운로드 및 스트리밍 재생
 
 ---
 
@@ -147,7 +158,7 @@ $ cp .env.ai.example .env.ai
 
 ```text
 .github/workflows/
-├── ci.yml                     # PR 및 main push 시 린트, Vitest 테스트, 모노레포 전체 빌드 자동 검증
+├── ci.yml                     # PR 및 main push 시 린트, 타입체크, Vitest 테스트, 모노레포 전체 빌드 자동 검증
 ├── docker-publish.yml         # API 앱 Dockerfile.api 빌드 및 GitOps(homelab-infra backend) 태그 갱신
 └── docker-publish-ai.yml      # AI 앱 Dockerfile.ai 빌드 및 GitOps(homelab-infra ai) 태그 갱신
 ```
@@ -172,7 +183,15 @@ $ docker build -f Dockerfile.ai -t my-space-ai:latest .
 
 - [ADR 인덱스 (`docs/adr/`)](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/adr/README.md)
   - [ADR-0001: Nest CLI 모노레포 전환 및 AI Workspace 서비스 프로세스 분리](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/adr/0001-nest-cli-monorepo-ai-service-separation.md)
+  - [ADR-0002: J.A.R.V.I.S. Neural Core 음성 비서 파이프라인 및 실시간 텔레메트리 스트리밍 아키텍처](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/adr/0002-jarvis-neural-voice-assistant-pipeline-architecture.md)
+  - [ADR-0003: pnpm Workspaces 기반 앱별 독립 패키지 및 0.1.0 버전 관리 체계 도입](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/adr/0003-pnpm-workspaces-multi-package-versioning.md)
 - [기능 사양서 인덱스 (`docs/specs/`)](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/README.md)
-  - [ai-workspace.md: AI Workspace 도메인 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/ai-workspace.md)
+  - [error-handling.md: 전역 에러 처리 및 커스텀 예외 체계 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/error-handling.md)
+  - [config.md: 환경 설정 및 ConfigService 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/config.md)
+  - [authelia-auth.md: Authelia SSO Gateway 연동 및 인증 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/authelia-auth.md)
+  - [health-check.md: 쿠버네티스 프로브 연동 및 런타임 진단용 헬스체크 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/health-check.md)
+  - [version-info.md: 애플리케이션 버전 및 빌드 메타데이터 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/version-info.md)
+  - [pdf-tools.md: PDF 조작 및 유틸리티 도메인 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/pdf-tools.md)
   - [markdown-documents.md: 마크다운 문서 도메인 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/markdown-documents.md)
-  - [pdf-tools.md: PDF 조작 도메인 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/pdf-tools.md)
+  - [ai-workspace.md: AI Workspace 도메인 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/ai-workspace.md)
+  - [jarvis-voice-assistant.md: J.A.R.V.I.S. Neural Core 음성 비서 파이프라인 사양서](file:///Users/limkeunhyeok/workspace/my-space-backend/docs/specs/jarvis-voice-assistant.md)

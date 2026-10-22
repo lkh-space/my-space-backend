@@ -25,7 +25,7 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
   beforeEach(() => {
     mockEmbeddingProvider = {
       name: 'gemini',
-      embeddingModel: 'text-embedding-004',
+      embeddingModel: 'gemini-embedding-001',
       dimension: 768,
       embedText: vi
         .fn()
@@ -112,7 +112,7 @@ describe('AiToolsService (BDD 단위 테스트)', () => {
         expect.any(Array),
         2,
         {
-          embeddingModel: 'text-embedding-004',
+          embeddingModel: 'gemini-embedding-001',
         },
       );
     });

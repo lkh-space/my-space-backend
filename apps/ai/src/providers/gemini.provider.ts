@@ -25,7 +25,7 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     this.model = this.configService.get<string>('ai.gemini.model', 'gemini-3.8-flash');
     this.embeddingModel = this.configService.get<string>(
       'ai.gemini.embeddingModel',
-      'text-embedding-004',
+      'gemini-embedding-001',
     );
 
     if (apiKey) {

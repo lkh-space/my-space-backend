@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TagService } from './tag.service.js';
+import { TagResolverService } from '@app/markdown-core';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
 
 describe('TagService', () => {
@@ -14,7 +15,8 @@ describe('TagService', () => {
       },
     } as unknown as PrismaService;
 
-    service = new TagService(prisma);
+    const tagResolverService = new TagResolverService(prisma);
+    service = new TagService(prisma, tagResolverService);
   });
 
   describe('getTags', () => {
