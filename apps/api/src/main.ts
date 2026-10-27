@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
@@ -6,12 +7,16 @@ import { AppModule, ObserveInstrument } from './app.module.js';
 import { VersionService } from '@app/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     instrument: ObserveInstrument,
     bufferLogs: true,
   });
   const logger = app.get(Logger);
   app.useLogger(logger);
+
+  // 대용량 마크다운 및 Base64 다이어그램 에셋 처리를 위한 Body Parser 용량 확장 (기본 100kb -> 300mb)
+  app.useBodyParser('json', { limit: '300mb' });
+  app.useBodyParser('urlencoded', { limit: '300mb', extended: true });
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('app.port') ?? 3000;

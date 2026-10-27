@@ -242,4 +242,35 @@ export class DocumentController {
     res.setHeader('Content-Disposition', formatContentDisposition(filename));
     res.send(Buffer.from(buffer));
   }
+
+  @Post(':id/export/pdf')
+  @ApiOperation({
+    summary: '마크다운 문서 PDF 파일 다운로드 (렌더링된 자산 포함)',
+    description: '클라이언트에서 사전 렌더링된 다이어그램 및 수식 그래픽 자산을 포함하여 고품질 PDF 문서를 다운로드합니다.',
+  })
+  async exportPdfWithAssets(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      renderedAssets?: Array<{
+        type: 'mermaid' | 'math' | string;
+        code: string;
+        imageBase64: string;
+        width?: number;
+        height?: number;
+      }>;
+    },
+    @Res() res: Response,
+  ): Promise<void> {
+    const { filename, buffer } = await this.documentService.exportPdf(
+      user.username,
+      id,
+      body,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', formatContentDisposition(filename));
+    res.send(Buffer.from(buffer));
+  }
 }

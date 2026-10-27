@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import fontkit from '@pdf-lib/fontkit';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { Injectable, Logger } from '@nestjs/common';
 import { safeMatter } from '@app/common/markdown/safe-matter.js';
 import { PrismaService } from '@app/storage/prisma/prisma.service.js';
@@ -43,11 +45,25 @@ export class DocumentService {
   ): Promise<DocumentDetailDto> {
     const content = dto.content || '';
     const frontmatter = dto.frontmatter || {};
+
+    // DTO의 tags와 본문 content의 Frontmatter tags를 안전하게 병합
+    const contentFm = safeMatter(content);
+    let extractedFmTags: string[] = [];
+    if (Array.isArray(contentFm.data?.tags)) {
+      extractedFmTags = contentFm.data.tags.map((t) => String(t).trim()).filter(Boolean);
+    } else if (typeof contentFm.data?.tags === 'string') {
+      extractedFmTags = contentFm.data.tags.split(',').map((t) => t.trim()).filter(Boolean);
+    }
+
+    const effectiveTags = Array.from(
+      new Set([...(dto.tags || []), ...extractedFmTags]),
+    );
+
     const created = await this.markdownWriterService.createDocument(ownerId, {
       title: dto.title,
       content,
       folderId: dto.folderId,
-      tags: dto.tags,
+      tags: effectiveTags,
       frontmatter,
     });
 
@@ -63,6 +79,50 @@ export class DocumentService {
       content,
       frontmatter,
     });
+  }
+
+  /**
+   * 태그 관계가 비어있는 문서들을 찾아 Frontmatter 태그를 DB DocumentTag로 자동 복구
+   */
+  async syncLegacyDocumentTags(ownerId: string): Promise<void> {
+    try {
+      const docsWithoutTags = await this.prisma.document.findMany({
+        where: {
+          ownerId,
+          tags: { none: {} },
+        },
+        select: { id: true, objectKey: true },
+      });
+
+      for (const d of docsWithoutTags) {
+        try {
+          const raw = await this.minioService.getObjectAsString(
+            this.minioService.docsBucket,
+            d.objectKey,
+          );
+          const parsed = safeMatter(raw);
+          if (parsed.data?.tags) {
+            let fmTags: string[] = [];
+            if (Array.isArray(parsed.data.tags)) {
+              fmTags = parsed.data.tags.map((t: any) => String(t).trim()).filter(Boolean);
+            } else if (typeof parsed.data.tags === 'string') {
+              fmTags = parsed.data.tags.split(',').map((t: any) => t.trim()).filter(Boolean);
+            }
+            if (fmTags.length > 0) {
+              const tagIds = await this.tagService.resolveTags(ownerId, fmTags);
+              await this.prisma.documentTag.createMany({
+                data: tagIds.map((tagId) => ({ documentId: d.id, tagId })),
+                skipDuplicates: true,
+              });
+            }
+          }
+        } catch {
+          // 개별 문서 조회 실패 시 건너뜀
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`syncLegacyDocumentTags 실패: ${err}`);
+    }
   }
 
   /**
@@ -87,14 +147,22 @@ export class DocumentService {
     }
 
     if (query.tag) {
-      where.tags = {
-        some: {
-          tag: {
-            name: query.tag.toLowerCase(),
-            ownerId,
+      if (
+        query.tag === '__untagged__' ||
+        query.tag.toLowerCase() === 'untagged' ||
+        query.tag === '미등록'
+      ) {
+        where.tags = { none: {} };
+      } else {
+        where.tags = {
+          some: {
+            tag: {
+              name: query.tag.toLowerCase(),
+              ownerId,
+            },
           },
-        },
-      };
+        };
+      }
     }
 
     const findArgs: any = {
@@ -178,12 +246,34 @@ export class DocumentService {
 
     const parsed = safeMatter(rawMarkdown);
 
+    let activeTags = doc.tags.map((t: any) => t.tag.name);
+    if (activeTags.length === 0 && parsed.data?.tags) {
+      let fmTags: string[] = [];
+      if (Array.isArray(parsed.data.tags)) {
+        fmTags = parsed.data.tags.map((t: any) => String(t).trim()).filter(Boolean);
+      } else if (typeof parsed.data.tags === 'string') {
+        fmTags = parsed.data.tags.split(',').map((t: any) => t.trim()).filter(Boolean);
+      }
+      if (fmTags.length > 0) {
+        try {
+          const tagIds = await this.tagService.resolveTags(ownerId, fmTags);
+          await this.prisma.documentTag.createMany({
+            data: tagIds.map((tagId) => ({ documentId: doc.id, tagId })),
+            skipDuplicates: true,
+          });
+          activeTags = Array.from(new Set(fmTags.map((t) => t.toLowerCase())));
+        } catch (syncErr) {
+          this.logger.warn(`문서 상세 태그 자동 동기화 실패: ${syncErr}`);
+        }
+      }
+    }
+
     return new DocumentDetailDto({
       id: doc.id,
       title: doc.title,
       folderId: doc.folderId,
       folderName: doc.folder?.name || null,
-      tags: doc.tags.map((t: any) => t.tag.name),
+      tags: activeTags,
       currentVersion: doc.currentVersion,
       createdAt: doc.createdAt.toISOString(),
       updatedAt: doc.updatedAt.toISOString(),
@@ -294,6 +384,20 @@ export class DocumentService {
       activeTagNames = dto.tags;
     }
 
+    // 본문 Frontmatter tags 보강: 본문에 Frontmatter tags가 명시되어 있다면 자동 병합
+    if (newContent) {
+      const contentFm = safeMatter(newContent);
+      let extractedFmTags: string[] = [];
+      if (Array.isArray(contentFm.data?.tags)) {
+        extractedFmTags = contentFm.data.tags.map((t) => String(t).trim()).filter(Boolean);
+      } else if (typeof contentFm.data?.tags === 'string') {
+        extractedFmTags = contentFm.data.tags.split(',').map((t) => t.trim()).filter(Boolean);
+      }
+      if (extractedFmTags.length > 0) {
+        activeTagNames = Array.from(new Set([...activeTagNames, ...extractedFmTags]));
+      }
+    }
+
     let updated: any;
     try {
       // 3. DB 트랜잭션으로 리비전 생성, 태그 교체, 문서 갱신을 단일 트랜잭션으로 원자적 수행
@@ -309,10 +413,10 @@ export class DocumentService {
           });
         }
 
-        if (dto.tags !== undefined) {
+        if (dto.tags !== undefined || isModified) {
           const tagIds = await this.tagService.resolveTags(
             ownerId,
-            dto.tags,
+            activeTagNames,
             tx,
           );
           await tx.documentTag.deleteMany({
@@ -528,27 +632,69 @@ export class DocumentService {
    * - UTF-8 / 한글 폰트 지원 (@pdf-lib/fontkit 및 PDF_FONT_PATH / CUSTOM_FONT_PATH)
    * - Dynamic line wrapping (고정 길이 절단 제거)
    * - 자동 페이지네이션 (페이지 오버플로 시 새 페이지 생성)
+   * - 사전 렌더링된 Mermaid 다이어그램 및 KaTeX 수식 그래픽 이미지(PNG) 완벽 임베드
    */
   async exportPdf(
     ownerId: string,
     documentId: string,
+    options?: {
+      renderedAssets?: Array<{
+        type: 'mermaid' | 'math' | string;
+        code: string;
+        imageBase64: string;
+        width?: number;
+        height?: number;
+      }>;
+    },
   ): Promise<{ filename: string; buffer: Uint8Array }> {
+    this.logger.log(`exportPdf 호출: documentId=${documentId}, renderedAssets 개수=${options?.renderedAssets?.length ?? 0}`);
+    try {
+      fs.writeFileSync(
+        '/tmp/last-export-debug.json',
+        JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            ownerId,
+            documentId,
+            renderedAssetsSummary: options?.renderedAssets?.map((a) => ({
+              type: a.type,
+              code: a.code,
+              imageBase64Length: a.imageBase64?.length ?? 0,
+              imageBase64Prefix: a.imageBase64?.slice(0, 50),
+              width: a.width,
+              height: a.height,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (e) {
+      this.logger.warn(`debug payload 기록 실패: ${e}`);
+    }
+
     const detail = await this.getDocumentDetail(ownerId, documentId);
 
-    const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
     const pdfDoc = await PDFDocument.create();
 
     let font: any;
     let boldFont: any;
     let hasCustomFont = false;
 
-    // 환경 변수 기반 한국어/유니코드 TTF 폰트 파일 탐색 및 fontkit 등록
-    const fontPath = process.env.PDF_FONT_PATH || process.env.CUSTOM_FONT_PATH;
+    // 환경 변수 기반 한국어/유니코드 TTF 폰트 파일 탐색 및 시스템 기본 한글 폰트 자동 탐색
+    const candidateFontPaths = [
+      process.env.PDF_FONT_PATH,
+      process.env.CUSTOM_FONT_PATH,
+      '/System/Library/Fonts/Supplemental/AppleGothic.ttf',
+      '/Library/Fonts/AppleGothic.ttf',
+      '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+      '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+    ].filter(Boolean) as string[];
+
+    const fontPath = candidateFontPaths.find((p) => fs.existsSync(p));
     if (fontPath && fs.existsSync(fontPath)) {
       try {
-        const fontkitModule = await import('@pdf-lib/fontkit');
-        const fontkit = (fontkitModule.default || fontkitModule) as any;
-        pdfDoc.registerFontkit(fontkit);
+        pdfDoc.registerFontkit(fontkit as any);
         const fontBytes = fs.readFileSync(fontPath);
         font = await pdfDoc.embedFont(fontBytes);
         boldFont = font;
@@ -676,16 +822,235 @@ export class DocumentService {
     });
     y -= 20;
 
-    // 4. 본문 내용 동적 래핑 및 페이지네이션 출력
-    const lines = detail.content.split('\n');
-    for (const rawLine of lines) {
-      if (rawLine.startsWith('# ')) {
-        printLine(rawLine.replace('# ', ''), 16, boldFont, rgb(0.2, 0.2, 0.2), 22);
-      } else if (rawLine.startsWith('## ')) {
-        printLine(rawLine.replace('## ', ''), 14, boldFont, rgb(0.3, 0.3, 0.3), 18);
-      } else {
-        printLine(rawLine, 10, font, rgb(0.2, 0.2, 0.2), 14);
+    // 4. 자산 매핑 준비 (코드 정규화 및 순서 큐)
+    const normalizeCode = (c: string) => c.replace(/\r\n/g, '\n').trim();
+    const mermaidAssets = (options?.renderedAssets || []).filter(
+      (a) => a.type === 'mermaid',
+    );
+    const mathAssets = (options?.renderedAssets || []).filter(
+      (a) => a.type === 'math',
+    );
+    let mermaidAssetIndex = 0;
+    let mathAssetIndex = 0;
+    this.logger.log(
+      `PDF 생성 요청: mermaid 자산 = ${mermaidAssets.length}개, math 자산 = ${mathAssets.length}개`,
+    );
+
+    // 5. 본문 내용 블록 파싱 및 렌더링
+    const lines = detail.content.split(/\r?\n/);
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // A. Mermaid 블록 감지
+      if (line.trim().startsWith('```mermaid')) {
+        const blockLines: string[] = [];
+        i++;
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          blockLines.push(lines[i]);
+          i++;
+        }
+        i++; // 닫는 ``` 건너뛰기
+
+        const rawCode = blockLines.join('\n');
+        const normCode = normalizeCode(rawCode);
+
+        // 자산 매칭 (1. 유효한 이미지를 가진 코드 매칭 우선, 2. 없으면 유효 이미지를 가진 자산 순서 큐 매칭)
+        let matchedAsset = mermaidAssets.find(
+          (a) => normalizeCode(a.code) === normCode && Boolean(a.imageBase64),
+        );
+        if (!matchedAsset) {
+          while (mermaidAssetIndex < mermaidAssets.length) {
+            const candidate = mermaidAssets[mermaidAssetIndex++];
+            if (candidate?.imageBase64) {
+              matchedAsset = candidate;
+              break;
+            }
+          }
+        }
+
+        if (matchedAsset?.imageBase64) {
+          try {
+            const cleanBase64 = matchedAsset.imageBase64.replace(
+              /^data:image\/\w+;base64,/,
+              '',
+            );
+            const imageBytes = Buffer.from(cleanBase64, 'base64');
+            const embeddedPng = await pdfDoc.embedPng(imageBytes);
+
+            const origWidth = matchedAsset.width || embeddedPng.width || 500;
+            const origHeight = matchedAsset.height || embeddedPng.height || 250;
+
+            const targetWidth = Math.min(maxContentWidth, origWidth);
+            const targetHeight = (origHeight / origWidth) * targetWidth;
+
+            // 페이지 오버플로 검사
+            if (y < margin + targetHeight + 20) {
+              page = pdfDoc.addPage([595.28, 841.89]);
+              y = height - margin;
+            }
+
+            const drawX = margin + (maxContentWidth - targetWidth) / 2;
+            page.drawImage(embeddedPng, {
+              x: drawX,
+              y: y - targetHeight,
+              width: targetWidth,
+              height: targetHeight,
+            });
+
+            y -= targetHeight + 18;
+            continue;
+          } catch (err) {
+            this.logger.warn(`Mermaid 다이어그램 이미지 임베드 실패: ${err}`);
+          }
+        }
+
+        // 이미지 매칭 실패 또는 로드 실패 시 깔끔한 텍스트 박스로 안전 폴백
+        printLine(`[Mermaid Diagram]`, 11, boldFont, rgb(0.2, 0.4, 0.7), 16);
+        for (const bl of blockLines) {
+          printLine(`  ${bl}`, 9, font, rgb(0.3, 0.3, 0.3), 13);
+        }
+        y -= 6;
+        continue;
       }
+
+      // B. 블록 수식 ($$ ... $$) 감지
+      if (line.trim().startsWith('$$')) {
+        const mathLines: string[] = [];
+        if (line.trim() === '$$') {
+          i++;
+          while (i < lines.length && !lines[i].trim().endsWith('$$')) {
+            mathLines.push(lines[i]);
+            i++;
+          }
+          if (i < lines.length) {
+            const lastL = lines[i].replace(/\$\$$/, '');
+            if (lastL.trim()) mathLines.push(lastL);
+            i++;
+          }
+        } else {
+          // 한 줄에 다 있는 경우: $$formula$$
+          const inner = line.trim().replace(/^\$\$/, '').replace(/\$\$$/, '');
+          mathLines.push(inner);
+          i++;
+        }
+
+        const rawMath = mathLines.join('\n');
+        const normMath = normalizeCode(rawMath);
+
+        let matchedMath = mathAssets.find(
+          (a) => normalizeCode(a.code) === normMath && Boolean(a.imageBase64),
+        );
+        if (!matchedMath) {
+          while (mathAssetIndex < mathAssets.length) {
+            const candidate = mathAssets[mathAssetIndex++];
+            if (candidate?.imageBase64) {
+              matchedMath = candidate;
+              break;
+            }
+          }
+        }
+
+        if (matchedMath?.imageBase64) {
+          try {
+            const cleanBase64 = matchedMath.imageBase64.replace(
+              /^data:image\/\w+;base64,/,
+              '',
+            );
+            const imageBytes = Buffer.from(cleanBase64, 'base64');
+            const embeddedPng = await pdfDoc.embedPng(imageBytes);
+
+            const origWidth = matchedMath.width || embeddedPng.width || 350;
+            const origHeight = matchedMath.height || embeddedPng.height || 60;
+
+            const targetWidth = Math.min(maxContentWidth * 0.8, origWidth);
+            const targetHeight = (origHeight / origWidth) * targetWidth;
+
+            if (y < margin + targetHeight + 15) {
+              page = pdfDoc.addPage([595.28, 841.89]);
+              y = height - margin;
+            }
+
+            const drawX = margin + (maxContentWidth - targetWidth) / 2;
+            page.drawImage(embeddedPng, {
+              x: drawX,
+              y: y - targetHeight,
+              width: targetWidth,
+              height: targetHeight,
+            });
+
+            y -= targetHeight + 14;
+            continue;
+          } catch (err) {
+            this.logger.warn(`KaTeX 수식 이미지 임베드 실패: ${err}`);
+          }
+        }
+
+        // 수식 이미지 미제공 시: 깔끔한 수식 박스 컨테이너 조판
+        const boxHeight = 34;
+        if (y < margin + boxHeight + 10) {
+          page = pdfDoc.addPage([595.28, 841.89]);
+          y = height - margin;
+        }
+
+        page.drawRectangle({
+          x: margin,
+          y: y - boxHeight,
+          width: maxContentWidth,
+          height: boxHeight,
+          color: rgb(0.96, 0.96, 0.98),
+          borderColor: rgb(0.85, 0.85, 0.88),
+          borderWidth: 1,
+        });
+
+        const readableMath = rawMath
+          .replace(/\\sum/g, '∑')
+          .replace(/\\prod/g, '∏')
+          .replace(/\\int/g, '∫')
+          .replace(/\\approx/g, '≈')
+          .replace(/\\neq/g, '≠')
+          .replace(/\\leq/g, '≤')
+          .replace(/\\geq/g, '≥')
+          .replace(/\\mathcal\{([A-Za-z])\}/g, '$1')
+          .replace(/\\([a-zA-Z]+)/g, '$1')
+          .replace(/[{}]/g, '');
+
+        page.drawText(`f(x)  ${readableMath}`, {
+          x: margin + 14,
+          y: y - boxHeight + 11,
+          size: 11,
+          font: boldFont,
+          color: rgb(0.15, 0.15, 0.25),
+        });
+
+        y -= boxHeight + 14;
+        continue;
+      }
+
+      // C. 일반 마크다운 라인 처리
+      if (line.startsWith('# ')) {
+        y -= 6;
+        printLine(line.replace('# ', ''), 16, boldFont, rgb(0.1, 0.1, 0.1), 22);
+        y -= 4;
+      } else if (line.startsWith('## ')) {
+        y -= 4;
+        printLine(line.replace('## ', ''), 14, boldFont, rgb(0.2, 0.2, 0.2), 19);
+        y -= 2;
+      } else if (line.startsWith('### ')) {
+        printLine(line.replace('### ', ''), 12, boldFont, rgb(0.25, 0.25, 0.25), 16);
+      } else if (line.trim().startsWith('- [x] ') || line.trim().startsWith('- [ ] ')) {
+        const isChecked = line.trim().startsWith('- [x] ');
+        const itemText = line.trim().slice(6);
+        const checkSymbol = isChecked ? '[V] ' : '[  ] ';
+        printLine(`${checkSymbol}${itemText}`, 10, font, rgb(0.2, 0.2, 0.2), 15);
+      } else if (line.trim() === '') {
+        y -= 8;
+      } else {
+        printLine(line, 10, font, rgb(0.2, 0.2, 0.2), 14);
+      }
+
+      i++;
     }
 
     const pdfBytes = await pdfDoc.save();
