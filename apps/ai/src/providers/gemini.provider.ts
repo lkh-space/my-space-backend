@@ -48,8 +48,28 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
     return this.client;
   }
 
+  private isTransientError(err: unknown): boolean {
+    if (!err) return false;
+    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+    const status = (err as { status?: number })?.status;
+    return (
+      status === 503 ||
+      status === 429 ||
+      msg.includes('503') ||
+      msg.includes('unavailable') ||
+      msg.includes('high demand') ||
+      msg.includes('429') ||
+      msg.includes('resource_exhausted') ||
+      msg.includes('rate limit')
+    );
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   /**
-   * 단발성 텍스트 및 Function Call 응답 생성
+   * 단발성 텍스트 및 Function Call 응답 생성 (일시적 503/429 발생 시 지수 백오프 및 대체 모델 자동 폴백)
    */
   async generate(
     messages: LlmMessage[],
@@ -85,39 +105,71 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
       config.tools = [{ functionDeclarations }];
     }
 
-    const response = await client.models.generateContent({
-      model: this.model,
-      contents,
-      config,
-    });
+    const candidateModels = Array.from(
+      new Set([this.model, 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash']),
+    );
 
-    const candidate = response.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
+    let lastError: unknown;
 
-    let textContent = '';
-    const toolCalls: LlmResponse['toolCalls'] = [];
+    for (const targetModel of candidateModels) {
+      if (signal?.aborted) break;
 
-    for (const part of parts) {
-      if (part.text) {
-        textContent += part.text;
-      }
-      if (part.functionCall) {
-        toolCalls.push({
-          id: part.functionCall.name || 'call_id',
-          name: part.functionCall.name || '',
-          args: (part.functionCall.args as Record<string, unknown>) || {},
-        });
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await client.models.generateContent({
+            model: targetModel,
+            contents,
+            config,
+          });
+
+          const candidate = response.candidates?.[0];
+          const parts = candidate?.content?.parts || [];
+
+          let textContent = '';
+          const toolCalls: LlmResponse['toolCalls'] = [];
+
+          for (const part of parts) {
+            if (part.text) {
+              textContent += part.text;
+            }
+            if (part.functionCall) {
+              toolCalls.push({
+                id: part.functionCall.name || 'call_id',
+                name: part.functionCall.name || '',
+                args: (part.functionCall.args as Record<string, unknown>) || {},
+              });
+            }
+          }
+
+          return {
+            content: textContent,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          };
+        } catch (err) {
+          lastError = err;
+          if (signal?.aborted) throw err;
+
+          if (this.isTransientError(err) && attempt < 2) {
+            this.logger.warn(
+              `[GeminiProvider] ${targetModel} 일시적 과부하(503/429) 감지. 1.5초 후 재시도합니다... (시도 #${attempt})`,
+            );
+            await this.sleep(1500);
+            continue;
+          }
+
+          this.logger.warn(
+            `[GeminiProvider] ${targetModel} 호출 실패, 다음 대체 모델을 시도합니다: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          break;
+        }
       }
     }
 
-    return {
-      content: textContent,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    };
+    throw lastError;
   }
 
   /**
-   * 실시간 스트리밍 생성 (AsyncGenerator)
+   * 실시간 스트리밍 생성 (AsyncGenerator, 일시적 503/429 발생 시 지수 백오프 및 대체 모델 자동 폴백)
    */
   async *stream(
     messages: LlmMessage[],
@@ -151,29 +203,48 @@ export class GeminiProvider implements LlmProvider, EmbeddingProvider {
       config.tools = [{ functionDeclarations }];
     }
 
-    let streamResponse;
-    try {
-      streamResponse = await client.models.generateContentStream({
-        model: this.model,
-        contents,
-        config,
-      });
-    } catch (err) {
-      if (signal?.aborted) {
-        return;
+    const candidateModels = Array.from(
+      new Set([this.model, 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash']),
+    );
+
+    let streamResponse: any = null;
+    let lastError: unknown;
+
+    for (const targetModel of candidateModels) {
+      if (signal?.aborted) return;
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          streamResponse = await client.models.generateContentStream({
+            model: targetModel,
+            contents,
+            config,
+          });
+          break;
+        } catch (err) {
+          lastError = err;
+          if (signal?.aborted) return;
+
+          if (this.isTransientError(err) && attempt < 2) {
+            this.logger.warn(
+              `[GeminiProvider] 스트리밍 중 ${targetModel} 일시적 과부하(503/429) 감지. 1.5초 후 재시도합니다... (시도 #${attempt})`,
+            );
+            await this.sleep(1500);
+            continue;
+          }
+
+          this.logger.warn(
+            `[GeminiProvider] 스트리밍 ${targetModel} 실패, 다음 대체 모델을 시도합니다: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          break;
+        }
       }
-      if (this.model !== 'gemini-3.5-flash') {
-        this.logger.warn(
-          `[GeminiProvider] ${this.model} 호출 실패로 gemini-3.5-flash로 자동 폴백합니다: ${err}`,
-        );
-        streamResponse = await client.models.generateContentStream({
-          model: 'gemini-3.5-flash',
-          contents,
-          config,
-        });
-      } else {
-        throw err;
-      }
+
+      if (streamResponse) break;
+    }
+
+    if (!streamResponse) {
+      throw lastError;
     }
 
     for await (const chunk of streamResponse) {
