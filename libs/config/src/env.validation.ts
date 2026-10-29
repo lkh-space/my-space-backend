@@ -16,6 +16,14 @@ export const envSchema = z.object({
   CORS_ORIGIN: z.string().optional(),
   CORS_ORIGINS: z.string().optional(),
   AUTH_FORWARDED_SECRET: z.string().optional(),
+  SWAGGER_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((val) => (val !== undefined ? val === 'true' : undefined)),
+  ENABLE_SWAGGER: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((val) => (val !== undefined ? val === 'true' : undefined)),
 
   // Database (PostgreSQL)
   DATABASE_URL: z.string().optional(),

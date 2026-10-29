@@ -1,7 +1,7 @@
 ---
 status: implemented
 owner: Keunhyeok Lim
-last-updated: 2026-10-22
+last-updated: 2026-10-29
 ---
 
 # 환경 설정 및 ConfigService 사양서 (Configuration Specification)
@@ -14,7 +14,7 @@ last-updated: 2026-10-22
 ### 목표 (Goals)
 * **Zod 기반 런타임 스키마 검증 (`validateEnv`)**: 잘못된 환경변수 값이나 필수 형식 위반 시 애플리케이션 시작 시점에 즉시 기동 실패(Fail-fast) 처리
 * **모듈별 네임스페이스(`registerAs`) 분리**:
-  - `app`: 서버 포트, 구동 환경, 로컬 여부, 로그 레벨, CORS 허용 출처, 프록시 시크릿
+  - `app`: 서버 포트, 구동 환경, 로컬 여부, 로그 레벨, CORS 허용 출처, 프록시 시크릿, Swagger 문서 활성화 여부(`swaggerEnabled`)
   - `database`: PostgreSQL 연결 URL 및 호스트/포트/계정 설정
   - `minio`: S3 호환 오브젝트 스토리지 엔드포인트, 인증키, 문서/에셋 버킷명
   - `opensearch`: 전문 검색 엔진 노드, 인증 정보, 인덱스명
@@ -43,6 +43,7 @@ last-updated: 2026-10-22
   - `PORT`: 숫자형 (기본값: `3000`, 1~65535 범위)
   - `NODE_ENV`: `'development'` | `'production'` | `'test'` (기본값: `'development'`)
   - `IS_LOCAL`: 불리언 문자열 파싱 (`'true'` -> `true`, 기본값: `false`)
+  - `SWAGGER_ENABLED` / `ENABLE_SWAGGER`: Swagger UI 활성화 여부 제어 (`'true'` -> `true`, `'false'` -> `false`, 미설정 시 `IS_LOCAL` 값으로 폴백)
   - `LOG_LEVEL`: `'debug'` | `'info'` | `'warn'` | `'error'` (기본값: `isLocal ? 'debug' : 'info'`)
   - `GEMINI_MODEL`: 기본값 `'gemini-3.8-flash'`, `GEMINI_EMBEDDING_MODEL`: 기본값 `'gemini-embedding-001'`
   - `OLLAMA_MODEL`: 기본값 `'qwen3.5:0.8b'`, `OLLAMA_EMBEDDING_MODEL`: 기본값 `'nomic-embed-text'`
