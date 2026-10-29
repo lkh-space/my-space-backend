@@ -131,7 +131,7 @@ $ cp .env.ai.example .env.ai
 ```
 
 > [!NOTE]
-> 각 애플리케이션(`apps/api`, `apps/ai`)은 기동 시 `.env.api` 및 `.env.ai`를 우선 로드하며, 공통 로컬 개발을 위해 단일 `.env` 파일이 존재할 경우 fallback으로 자동 병합 참조합니다.
+> 모노레포 아키텍처에 따라 각 애플리케이션(`apps/api`, `apps/ai`)은 독립된 프로세스 및 포트로 실행되며, 각각 `.env.api` 및 `.env.ai` 파일로부터 전용 환경 변수를 로드합니다.
 
 ---
 

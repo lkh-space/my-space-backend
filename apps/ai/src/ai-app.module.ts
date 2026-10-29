@@ -42,7 +42,7 @@ import { VoiceController } from './voice/voice.controller.js';
     CoreHttpModule,
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.ai', '.env'],
+      envFilePath: ['.env.ai'],
       load: [
         appConfig,
         databaseConfig,

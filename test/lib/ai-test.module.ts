@@ -45,7 +45,7 @@ import { TestService } from './test.service.js';
     CoreHttpModule,
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.ai', '.env'],
+      envFilePath: ['.env.ai'],
       load: [
         appConfig,
         databaseConfig,

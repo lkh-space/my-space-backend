@@ -21,7 +21,7 @@ last-updated: 2026-10-29
   - `qdrant`: 시맨틱 벡터 DB URL, API 키, 컬렉션명
   - `rabbitmq`: 메시지 브로커 URL 및 마크다운 인덱싱 큐 이름
   - `ai`: Google Gemini 및 Ollama 모델/임베딩 기본값 단일 관리(SSOT)
-* **앱별 `.env` 분리 및 Fallback 지원**: `apps/api`는 `['.env.api', '.env']`, `apps/ai`는 `['.env.ai', '.env']` 순서로 로드하여 앱별 격리와 로컬 단일 `.env` 편의성을 동시에 달성
+* **앱별 `.env` 분리 지원**: `apps/api`는 `['.env.api']`, `apps/ai`는 `['.env.ai']`를 독립 로드하여 애플리케이션 간 환경변수 및 포트(3000, 3001) 충돌을 원천 방지
 * **운영 배포 환경 호환**: 컨테이너 환경(Kubernetes, Docker)에서 주입되는 시스템 환경변수 완벽 지원
 
 ### 제외 대상 (Non-goals)
@@ -31,7 +31,7 @@ last-updated: 2026-10-29
 
 | 유스케이스 ID | 액터 | 목표 | 주요 흐름 요약 |
 | :--- | :--- | :--- | :--- |
-| `UC-C01` | 서버 런타임 | 환경변수 로드 및 검증 | 부트스트랩 시 `.env.<app>`, `.env` 및 시스템 환경변수를 Zod로 검증 후 ConfigModule 초기화 |
+| `UC-C01` | 서버 런타임 | 환경변수 로드 및 검증 | 부트스트랩 시 `.env.<app>` 및 시스템 환경변수를 Zod로 검증 후 ConfigModule 초기화 |
 | `UC-C02` | 개발자 | 잘못된 환경변수 감지 | 올바르지 않은 값 입력 시 명확한 Zod 검증 에러 메시지와 함께 기동 중단 |
 | `UC-C03` | 서비스 / 모듈 | 타입 안전한 설정 주입 | `@Inject(aiConfig.KEY)` 또는 `ConfigService`를 통해 타입 안정성이 보장된 설정값 사용 |
 | `UC-C04` | 로거 모듈 | 설정 기반 로거 초기화 | `ConfigService`를 통해 `app.isLocal`, `app.logLevel`을 비동기로 주입받아 Pino 로거 구성 |
@@ -72,4 +72,4 @@ last-updated: 2026-10-29
 ## 7. 결정된 사항 (Decisions)
 
 * [x] **Zod 채택**: 간결한 스키마 정의 및 완벽한 TypeScript 추론을 위해 Zod를 사용.
-* [x] **앱별 환경 파일(`.env.api`, `.env.ai`) 및 공통 `.env` 병행 지원**: 모노레포 앱 분리 환경과 로컬 단일 파일 DX를 모두 만족하도록 배열(`envFilePath: ['.env.api', '.env']`) 형태로 로드.
+* [x] **앱별 환경 파일(`.env.api`, `.env.ai`) 완전 분리**: 모노레포 앱 간 포트 충돌 및 미사용 환경변수 오염 방지를 위해 각 앱별 파일로 독립 로드.

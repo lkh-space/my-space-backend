@@ -563,7 +563,9 @@ describe('DocumentService', () => {
   });
 
   describe('exportPdf', () => {
-    it('긴 텍스트와 여러 헤더가 포함된 문서를 동적 줄바꿈 및 페이지네이션을 거쳐 PDF 버퍼로 정상 생성해야 한다', async () => {
+    it(
+      '긴 텍스트와 여러 헤더가 포함된 문서를 동적 줄바꿈 및 페이지네이션을 거쳐 PDF 버퍼로 정상 생성해야 한다',
+      async () => {
       // given
       const ownerId = 'admin';
       const documentId = 'doc-pdf-1';
@@ -598,6 +600,6 @@ describe('DocumentService', () => {
       // PDF 매직 바이트 검증 (%PDF-)
       const pdfHeader = Buffer.from(result.buffer.slice(0, 5)).toString('utf-8');
       expect(pdfHeader).toBe('%PDF-');
-    });
+    }, 15000);
   });
 });

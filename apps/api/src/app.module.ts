@@ -47,7 +47,7 @@ const observeImports = isObserveConfigured
     CoreHttpModule,
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.api', '.env'],
+      envFilePath: ['.env.api'],
       load: [
         appConfig,
         databaseConfig,

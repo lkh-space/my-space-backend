@@ -60,9 +60,8 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const port =
-    process.env.PORT && process.env.PORT !== '3000'
-      ? Number(process.env.PORT)
-      : 3001;
+    configService.get<number>('app.port') ??
+    (process.env.PORT ? Number(process.env.PORT) : 3001);
   await app.listen(port);
 
   const versionService = app.get(VersionService);
