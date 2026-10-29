@@ -64,7 +64,7 @@ last-updated: 2026-10-06
 * **`BR-A05` (Tool 권한 제한)**:
   * AI가 실행하는 모든 도구는 요청자의 `ownerId` 권한 범위 내에서만 동작하며, 임의의 API를 호출할 수 없다.
 * **`BR-A06` (CORS 및 브라우저 교차 출처 요청 위조 방어)**:
-  * AI 서버는 임의의 Origin 반사(`origin: true`)를 엄격히 금지하고, 화이트리스트(`defaultOrigins` + `app.corsOrigins`)에 등록된 신뢰 출처만 허용한다.
+  * AI 서버는 임의의 Origin 반사(`origin: true`) 및 코드 내 도메인 하드코딩을 엄격히 금지하고, 환경변수 기반 화이트리스트(`CORS_ORIGINS` / `app.corsOrigins`)에 등록된 신뢰 출처만 허용한다 (미설정 시 빈 배열 `[]`로 Fail-Closed 차단).
   * 브라우저 CORS 요청 헤더(`allowedHeaders`)에서 `Remote-*` 계열의 프록시 헤더를 원천 배제하여 외부 악성 스크립트에 의한 인증 헤더 조작 및 CSRF를 방지한다.
 * **`BR-A07` (메시지 브로커 신뢰성, 재시도 및 DLQ)**:
   * RabbitMQ 브로커와의 연결 유실 시 지수 백오프 기반으로 자동 재연결되어야 하며, 연결 복구 시 등록된 Consumer가 자동으로 복원되어야 한다.

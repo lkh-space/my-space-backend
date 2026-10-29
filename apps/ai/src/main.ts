@@ -1,4 +1,4 @@
-import { VersionService } from '@app/common';
+import { VersionService, setupCors } from '@app/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
@@ -15,47 +15,8 @@ async function bootstrap() {
   // Swagger (OpenAPI) 문서 초기화
   const isSwaggerEnabled = setupSwagger(app);
 
-  // CORS 설정 (API 서버와 동일한 안전한 화이트리스트 및 브라우저 헤더 적용)
-  const defaultOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:3001',
-  ];
-
-  const rawCorsOrigins =
-    configService.get<string>('CORS_ORIGINS') ??
-    configService.get<string>('CORS_ORIGIN');
-
-  const configuredOrigins = rawCorsOrigins
-    ? rawCorsOrigins
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter((origin) => origin.length > 0)
-    : (configService.get<string[]>('app.corsOrigins') ?? []);
-
-  const isProduction =
-    configService.get<string>('app.nodeEnv') === 'production' ||
-    process.env.NODE_ENV === 'production';
-
-  let allowedOrigins: string[];
-  if (configuredOrigins.length > 0) {
-    allowedOrigins = Array.from(new Set(configuredOrigins));
-  } else if (!isProduction) {
-    allowedOrigins = defaultOrigins;
-  } else {
-    allowedOrigins = [];
-    pinoLogger.warn(
-      '운영 환경(NODE_ENV=production)에서 CORS_ORIGINS 환경변수가 설정되지 않아 교차 출처(CORS) 요청이 모두 차단됩니다.',
-      'Bootstrap',
-    );
-  }
-
-  app.enableCors({
-    origin: allowedOrigins,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
-  });
+  // CORS 보안 정책 초기화
+  setupCors(app);
 
   app.enableShutdownHooks();
 

@@ -17,6 +17,7 @@ export * from './exceptions/storage-not-found.exception.js';
 
 export * from './exceptions/tool-not-found.exception.js';
 export * from './core/core-http.module.js';
+export * from './core/cors.config.js';
 
 export * from './context/trace-context.service.js';
 export * from './context/trace-context.middleware.js';
