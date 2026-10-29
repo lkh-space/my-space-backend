@@ -99,4 +99,78 @@ describe('logger.config (BDD 단위 테스트)', () => {
       );
     });
   });
+
+  describe('로컬 멀티라인 들여쓰기 및 로그 레벨별 색상 포맷팅 (Pretty JSON Stream)', () => {
+    it('isLocal: true일 때는 커스텀 stream이 설정되고, isLocal: false(운영)일 때는 단일 라인 출력을 위해 stream이 undefined여야 한다', () => {
+      // given & when
+      const localConfig = createLoggerConfig({ isLocal: true }) as any;
+      const prodConfig = createLoggerConfig({ isLocal: false }) as any;
+
+      // then
+      expect(localConfig.pinoHttp.stream).toBeDefined();
+      expect(typeof localConfig.pinoHttp.stream.write).toBe('function');
+      expect(prodConfig.pinoHttp.stream).toBeUndefined();
+    });
+
+    it('단일 라인 JSON을 2칸 들여쓰기(Multi-line)로 변환하고 error 레벨은 빨간색, info 레벨은 초록색 ANSI 코드를 적용해야 한다', async () => {
+      // given
+      const {
+        formatPrettyJsonLog,
+        LOG_LEVEL_COLORS,
+        ANSI_RESET,
+      } = await import('./pretty-json.transport.js');
+      const errorLine = JSON.stringify({
+        level: 'error',
+        msg: 'Something failed',
+      });
+      const infoLine = JSON.stringify({
+        level: 'info',
+        msg: 'Server started',
+      });
+
+      // when
+      const formattedError = formatPrettyJsonLog(errorLine);
+      const formattedInfo = formatPrettyJsonLog(infoLine);
+
+      // then
+      expect(formattedError).toContain('{\n  "level": "error",\n  "msg": "Something failed"\n}');
+      expect(formattedError.startsWith(LOG_LEVEL_COLORS.error)).toBe(true);
+      expect(formattedError.endsWith(`${ANSI_RESET}\n`)).toBe(true);
+
+      expect(formattedInfo).toContain('{\n  "level": "info",\n  "msg": "Server started"\n}');
+      expect(formattedInfo.startsWith(LOG_LEVEL_COLORS.info)).toBe(true);
+      expect(formattedInfo.endsWith(`${ANSI_RESET}\n`)).toBe(true);
+    });
+
+    it('운영 환경(isLocal: false)에서는 색상 코드(\\x1b[)나 멀티라인 줄바꿈이 전혀 없는 순수 1줄 JSON만 출력되어야 한다', async () => {
+      // given
+      const pinoModule = await import('pino');
+      const pino = pinoModule.default;
+      const prodConfig = createLoggerConfig({ isLocal: false }) as any;
+      const capturedLogs: string[] = [];
+
+      const logger = pino(
+        {
+          level: prodConfig.pinoHttp.level,
+          timestamp: prodConfig.pinoHttp.timestamp,
+          formatters: prodConfig.pinoHttp.formatters,
+        },
+        prodConfig.pinoHttp.stream ?? {
+          write(chunk: string) {
+            capturedLogs.push(chunk);
+          },
+        },
+      );
+
+      // when
+      logger.error('Production error message');
+
+      // then
+      expect(capturedLogs).toHaveLength(1);
+      const rawOutput = capturedLogs[0];
+      expect(rawOutput).not.toContain('\x1b[');
+      expect(rawOutput.trim().split('\n')).toHaveLength(1);
+      expect(() => JSON.parse(rawOutput)).not.toThrow();
+    });
+  });
 });

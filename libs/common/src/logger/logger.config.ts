@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Params } from 'nestjs-pino';
 import pino from 'pino';
 
+import { createPrettyJsonStream } from './pretty-json.transport.js';
 import { maskSensitiveData } from './sensitive-data.masker.js';
 
 /**
@@ -26,23 +27,16 @@ export function checkIsLocal(isLocalExplicit?: boolean): boolean {
 }
 
 /**
- * 로컬 들여쓰기 JSON 트랜스포트 설정:
+ * 로컬 들여쓰기 및 색상 JSON 스트림 설정:
  * 로컬 환경(isLocal === true)일 때만 적용하며,
- * Winston의 format.prettyPrint()처럼 2칸 들여쓰기된 JSON 포맷을 터미널에 출력합니다.
+ * Winston의 format.prettyPrint()처럼 2칸 들여쓰기된 JSON 포맷과 로그 레벨별 ANSI 색상을 터미널에 출력합니다.
+ * 운영/외부 서버(isLocal === false)에서는 undefined를 반환하여 Loki 호환 단일 라인 JSON을 유지합니다.
  */
-function getPrettyTransport(isLocal: boolean) {
+function getPrettyStream(isLocal: boolean) {
   if (!isLocal) {
     return undefined;
   }
-
-  try {
-    const target = import.meta.resolve('./pretty-json.transport.js');
-    return {
-      target,
-    };
-  } catch {
-    return undefined;
-  }
+  return createPrettyJsonStream();
 }
 
 /**
@@ -78,8 +72,8 @@ export function createLoggerConfig(options?: LoggerConfigOptions): Params {
       // ISO 8601 타임스탬프 (예: "time":"2026-09-19T09:17:15.123Z")
       timestamp: pino.stdTimeFunctions.isoTime,
 
-      // 로컬 개발 환경: pino-pretty, 외부 서버(dev, qa, prod): Loki 호환 단일 라인 JSON
-      transport: getPrettyTransport(isLocal),
+      // 로컬 개발 환경: 2칸 들여쓰기 + 레벨별 색상 스트림, 외부 서버(prod 등): Loki 호환 단일 라인 JSON
+      stream: getPrettyStream(isLocal),
 
       // HTTP 요청마다 고유 Request ID 검증/생성 및 응답 헤더(x-request-id) 전파
       genReqId: (req: IncomingMessage, res: ServerResponse) => {
